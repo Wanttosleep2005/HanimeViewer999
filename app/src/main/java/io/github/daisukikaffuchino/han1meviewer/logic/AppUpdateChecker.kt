@@ -51,11 +51,34 @@ private data class AppUpdatePayload(
 @OptIn(ExperimentalSerializationApi::class)
 object AppUpdateChecker {
     private const val TAG = "AppUpdateChecker"
-    private const val ENCODED_UPDATE_URL =
-        "aHR0cHM6Ly9obm0tMTI1ODY2NDI3Ni5jb3MuYXAtc2hhbmdoYWkubXlxY2xvdWQuY29tL3VwZGF0ZS5qc29u"
+
+    /**
+     * 更新信息源。原本指向上游作者的腾讯云 COS，这里改为**本仓库**根目录下的
+     * `update.json`（沿用原实现的 base64 写法）：
+     *
+     *     https://raw.githubusercontent.com/Wanttosleep2005/HanimeViewer/mod/update.json
+     *
+     * 发新版时只需要改这个 json 里的 versionName / versionCode / downloadUrl 即可。
+     * 字段结构与 [AppUpdatePayload] 完全一致，解析逻辑无需改动。
+     *
+     * 注意分支是 `mod`：本仓库是 fork，`main` 上是另一条 0.19.x 线，
+     * 这条 26.3.2-mod.x 线放在 `mod` 分支上，所以两个 URL 都锁 `mod`。
+     *
+     * 存两份、按顺序回退：`raw.githubusercontent.com` 在部分网络下直连不通，
+     * 先走 jsDelivr 这个 GitHub 加速 CDN，失败再退回 raw。
+     */
+    private val UPDATE_URLS = listOf(
+        // jsDelivr（GitHub 内容加速，国内一般可直连）
+        "aHR0cHM6Ly9jZG4uanNkZWxpdnIubmV0L2doL1dhbnR0b3NsZWVwMjAwNS9IYW5pbWVWaWV3ZXJAbW9kL3VwZGF0ZS5qc29u",
+        // GitHub raw（直连，可能需要代理）
+        "aHR0cHM6Ly9yYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tL1dhbnR0b3NsZWVwMjAwNS9IYW5pbWVWaWV3ZXIvbW9kL3VwZGF0ZS5qc29u",
+    )
+
+    /** 原实现用于腾讯云 COS 防盗链；对 raw.githubusercontent 无影响，保留以免动到请求结构。 */
     private const val ENCODED_UPDATE_REFERER = "aG5tdmlld2VydXAuY29t"
+
     // 需与 app/build.gradle.kts 的 versionCode 保持一致
-    private const val CURRENT_VERSION_CODE = 260910
+    private const val CURRENT_VERSION_CODE = 260911
 
     private val jsonParser = Json {
         ignoreUnknownKeys = true
@@ -89,20 +112,31 @@ object AppUpdateChecker {
     suspend fun ignoreUpdate(versionCode: Int) = SettingsRepository.setIgnoredVersionCode(versionCode)
 
     private fun requestUpdateJson(): String {
-        val request = Request.Builder()
-            .url(ENCODED_UPDATE_URL.decodeFromStringByBase64(Base64.NO_WRAP))
-            .header(
-                "Referer",
-                ENCODED_UPDATE_REFERER.decodeFromStringByBase64(Base64.NO_WRAP)
-            )
-            .get()
-            .build()
-        return client.newCall(request).execute().use { response ->
-            check(response.isSuccessful) { "Update check failed with HTTP ${response.code}" }
-            response.body.string().also { json ->
-                LogUtil.d(TAG, "Update response JSON: $json")
+        var lastError: Throwable? = null
+        for (encoded in UPDATE_URLS) {
+            val url = encoded.decodeFromStringByBase64(Base64.NO_WRAP)
+            val request = Request.Builder()
+                .url(url)
+                .header(
+                    "Referer",
+                    ENCODED_UPDATE_REFERER.decodeFromStringByBase64(Base64.NO_WRAP)
+                )
+                .get()
+                .build()
+            val result = runCatching {
+                client.newCall(request).execute().use { response ->
+                    check(response.isSuccessful) { "Update check failed with HTTP ${response.code}" }
+                    response.body.string()
+                }
             }
+            result.getOrNull()?.let { json ->
+                LogUtil.d(TAG, "Update response JSON from $url: $json")
+                return json
+            }
+            lastError = result.exceptionOrNull()
+            LogUtil.e(TAG, "Update source failed: $url", lastError)
         }
+        throw lastError ?: IllegalStateException("No update source configured")
     }
 
     private fun String?.toUpdateCheckResult(): AppUpdateCheckResult {

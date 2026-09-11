@@ -26,9 +26,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.PagerState
-import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -36,11 +36,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
@@ -50,14 +47,18 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
+import kotlinx.coroutines.flow.distinctUntilChanged
 import io.github.daisukikaffuchino.han1meviewer.R
 import io.github.daisukikaffuchino.han1meviewer.logic.exception.HanimeNotFoundException
 import io.github.daisukikaffuchino.han1meviewer.logic.model.HanimePreview
+import io.github.daisukikaffuchino.han1meviewer.logic.state.PageLoadingState
 import io.github.daisukikaffuchino.han1meviewer.logic.state.WebsiteState
 import io.github.daisukikaffuchino.han1meviewer.pienization
 import io.github.daisukikaffuchino.han1meviewer.ui.component.CardContainerSurface
 import io.github.daisukikaffuchino.han1meviewer.ui.component.FilledTonalButton
 import io.github.daisukikaffuchino.han1meviewer.ui.component.IconButton
+import io.github.daisukikaffuchino.han1meviewer.ui.component.LoadMoreFooter
+import io.github.daisukikaffuchino.han1meviewer.ui.component.VideoCardItem
 import io.github.daisukikaffuchino.han1meviewer.ui.component.appbar.HanimePageSurface
 import io.github.daisukikaffuchino.han1meviewer.ui.component.appbar.HanimeTopAppBar
 import io.github.daisukikaffuchino.han1meviewer.ui.component.content.EmptyContent
@@ -65,7 +66,6 @@ import io.github.daisukikaffuchino.han1meviewer.ui.component.content.ErrorConten
 import io.github.daisukikaffuchino.han1meviewer.ui.component.content.LoadingContent
 import io.github.daisukikaffuchino.han1meviewer.ui.component.lazy.LazyColumn
 import io.github.daisukikaffuchino.han1meviewer.ui.screen.rememberRandomLoadingHint
-import kotlinx.coroutines.launch
 import io.github.daisukikaffuchino.han1meviewer.ui.component.HapticButton as Button
 import io.github.daisukikaffuchino.han1meviewer.ui.component.HapticTextButton as TextButton
 
@@ -79,6 +79,26 @@ fun PreviewContent(
     modifier: Modifier = Modifier,
 ) {
     val loadingHint = rememberRandomLoadingHint()
+    // 【月度归档】非 null 表示当前月份站方已停更，页面展示的是"按上市月份检索"的结果
+    val archiveState = uiState.archiveState
+    val archiveListState = rememberLazyListState()
+
+    // 【月度归档】滚到底部附近时自动加载下一页。
+    // 直接用滚动位置判断（而不是放在列表末尾 item 里），避免列表短时一路连锁把整月都拉完。
+    // ViewModel 的 loadMoreArchive() 内部已做去重与状态保护，这里多触发几次也无害。
+    if (archiveState != null) {
+        LaunchedEffect(archiveListState, archiveState.loadedPages, archiveState.isLoadingMore) {
+            snapshotFlow {
+                val info = archiveListState.layoutInfo
+                val lastVisible = info.visibleItemsInfo.lastOrNull()?.index ?: -1
+                info.totalItemsCount > 0 && lastVisible >= info.totalItemsCount - 3
+            }
+                .distinctUntilChanged()
+                .collect { atBottom ->
+                    if (atBottom) onEvent(PreviewEvent.OnLoadMoreArchive)
+                }
+        }
+    }
     HanimePageSurface(modifier = modifier) {
         Column(modifier = Modifier.fillMaxSize()) {
             HanimeTopAppBar(
@@ -148,15 +168,20 @@ fun PreviewContent(
                 modifier = Modifier
                     .fillMaxSize()
                     .background(MaterialTheme.colorScheme.background),
+                state = archiveListState,
                 contentPadding = PaddingValues(bottom = 24.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
-                item {
-                    PreviewSourceNoticeCard(
-                        onOpenWeb = { onEvent(PreviewEvent.OnOpenWebPreview) },
-                        onOpenGetchu = { onEvent(PreviewEvent.OnOpenGetchuPreview) },
-                        modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp),
-                    )
+                // 「站方预告已停更 / 去看 Getchu 预告」这张卡只在真正的预告模式出现。
+                // 归档模式列的是已经上映的番剧，与"预告停更"无关，所以不再展示。
+                if (archiveState == null) {
+                    item {
+                        PreviewSourceNoticeCard(
+                            onOpenWeb = { onEvent(PreviewEvent.OnOpenWebPreview) },
+                            onOpenGetchu = { onEvent(PreviewEvent.OnOpenGetchuPreview) },
+                            modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp),
+                        )
+                    }
                 }
 
                 item {
@@ -199,7 +224,71 @@ fun PreviewContent(
                     }
                 }
 
-                when (uiState.displayState) {
+                if (archiveState != null) {
+                    // ===== 【月度归档】 =====
+                    // 站方预告停更月份：不再请求 /previews/{yyyyMM}，改为按上市月份检索，
+                    // 直接列出该月 1 日至月底上线的全部番剧（两列网格，滚到底自动加载下一页）。
+                    when {
+                        archiveState.isLoading && !archiveState.hasItems -> item {
+                            LoadingContent(
+                                modifier = Modifier.padding(horizontal = 16.dp),
+                                message = loadingHint
+                            )
+                        }
+
+                        archiveState.isFatalError -> item {
+                            ErrorContent(
+                                title = stringResource(R.string.hanime_list),
+                                message = stringResource(R.string.preview_archive_failed),
+                                onRetry = { onEvent(PreviewEvent.OnRetryArchive) },
+                                modifier = Modifier.padding(horizontal = 16.dp),
+                            )
+                        }
+
+                        !archiveState.hasItems -> item {
+                            EmptyContent(
+                                hint = stringResource(R.string.preview_archive_empty),
+                                subHint = stringResource(R.string.preview_archive_empty_hint),
+                            )
+                        }
+
+                        else -> {
+                            items(
+                                archiveState.items.chunked(2),
+                                key = { row -> row.first().videoCode },
+                            ) { row ->
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 16.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                ) {
+                                    row.forEach { info ->
+                                        VideoCardItem(
+                                            modifier = Modifier.weight(1f),
+                                            videoItem = info,
+                                            isHorizontalCard = false,
+                                            onClickVideosItem = { code ->
+                                                onEvent(PreviewEvent.OnOpenVideo(code))
+                                            },
+                                            onLongClickVideosItem = { _, _ -> },
+                                        )
+                                    }
+                                    if (row.size == 1) Spacer(Modifier.weight(1f))
+                                }
+                            }
+
+                            item {
+                                LoadMoreFooter(
+                                    state = archiveState.toFooterState(),
+                                    loadedPage = archiveState.loadedPages,
+                                    isLoadingMore = archiveState.isLoadingMore,
+                                    modifier = Modifier.fillMaxWidth(),
+                                )
+                            }
+                        }
+                    }
+                } else when (uiState.displayState) {
                     is WebsiteState.Loading -> item {
                         LoadingContent(
                             modifier = Modifier.padding(horizontal = 16.dp),
@@ -210,41 +299,18 @@ fun PreviewContent(
                     is WebsiteState.Error -> item {
                         val isPreviewEmpty =
                             uiState.displayState.throwable is HanimeNotFoundException
-                        // 【额外增加的一条路】请求月份已停更时，下面再补一块"站方最后更新过、
-                        // 目前仍然在线"的预告。原有的提示语与重试逻辑完全不变。
-                        val latestAvailable = (uiState.fallbackState as? WebsiteState.Success)
-                            ?.info
-                            ?.takeIf { it.isFellBack }
-                        Column(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalArrangement = Arrangement.spacedBy(16.dp),
-                        ) {
-                            ErrorContent(
-                                title = stringResource(R.string.hanime_list),
-                                message = if (isPreviewEmpty) {
-                                    stringResource(R.string.preview_month_not_updated)
-                                } else {
-                                    uiState.displayState.throwable.pienization.toString()
-                                },
-                                onRetry = if (isPreviewEmpty) null else {
-                                    { onEvent(PreviewEvent.OnRetryLoad) }
-                                },
-                                modifier = Modifier.padding(horizontal = 16.dp),
-                            )
-                            if (isPreviewEmpty && latestAvailable != null) {
-                                LatestAvailablePreviewSection(
-                                    preview = latestAvailable,
-                                    monthLabel = uiState.fallbackMonthLabel.orEmpty(),
-                                    onOpenVideo = { code ->
-                                        onEvent(PreviewEvent.OnOpenVideo(code))
-                                    },
-                                    onOpenImage = { index, imageUrls ->
-                                        onEvent(PreviewEvent.OnOpenImage(index, imageUrls))
-                                    },
-                                    modifier = Modifier,
-                                )
-                            }
-                        }
+                        ErrorContent(
+                            title = stringResource(R.string.hanime_list),
+                            message = if (isPreviewEmpty) {
+                                stringResource(R.string.preview_month_not_updated)
+                            } else {
+                                uiState.displayState.throwable.pienization.toString()
+                            },
+                            onRetry = if (isPreviewEmpty) null else {
+                                { onEvent(PreviewEvent.OnRetryLoad) }
+                            },
+                            modifier = Modifier.padding(horizontal = 16.dp),
+                        )
                     }
 
                     is WebsiteState.Success -> {
@@ -292,70 +358,13 @@ fun PreviewContent(
 }
 
 /**
- * 【额外增加的一条路】"站方最后更新过的那一期"预告。
- *
- * 站方自 2026-05 起停更新番预告，请求当月必然拿不到内容。这里把回溯到的、
- * 目前仍然在线的那一期原样展示出来，作为停更期间的一块补充内容——
- * 它不改变原有的月份浏览与提示，只是让页面上不再只有一句"没有更新"。
+ * 把【月度归档】的状态映射成 [LoadMoreFooter] 需要的分页状态。
  */
-@OptIn(ExperimentalFoundationApi::class)
-@Composable
-private fun LatestAvailablePreviewSection(
-    preview: HanimePreview,
-    monthLabel: String,
-    onOpenVideo: (String?) -> Unit,
-    onOpenImage: (Int, List<String>) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    var selectedIndex by remember { mutableIntStateOf(0) }
-    val pagerState = rememberPagerState(
-        pageCount = { preview.previewInfo.size.coerceAtLeast(1) })
-    val scope = rememberCoroutineScope()
-
-    Column(
-        modifier = modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        Text(
-            text = stringResource(R.string.preview_latest_available_title, monthLabel),
-            style = MaterialTheme.typography.titleMedium,
-            color = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.padding(horizontal = 16.dp),
-        )
-
-        if (preview.latestHanime.isNotEmpty()) {
-            PreviewTourRow(
-                latestHanime = preview.latestHanime,
-                selectedIndex = selectedIndex,
-                onSelect = { index ->
-                    selectedIndex = index
-                    scope.launch {
-                        if (index in preview.previewInfo.indices) {
-                            pagerState.animateScrollToPage(index)
-                        }
-                    }
-                },
-            )
-        }
-
-        if (preview.previewInfo.isNotEmpty()) {
-            HorizontalPager(
-                state = pagerState,
-                beyondViewportPageCount = 1,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = 620.dp)
-                    .animateContentSize(),
-                verticalAlignment = Alignment.Top,
-            ) { page ->
-                PreviewInfoCard(
-                    previewInfo = preview.previewInfo[page],
-                    onOpenVideo = onOpenVideo,
-                    onOpenImage = onOpenImage,
-                )
-            }
-        }
-    }
+private fun PreviewArchiveUiState.toFooterState(): PageLoadingState<*> = when {
+    isLoadingMore -> PageLoadingState.Loading
+    hasError -> PageLoadingState.Error(IllegalStateException("archive load failed"))
+    noMoreData -> PageLoadingState.NoMoreData
+    else -> PageLoadingState.Success(Unit)
 }
 
 @Composable

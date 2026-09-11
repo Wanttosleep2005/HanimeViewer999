@@ -1,0 +1,9 @@
+{
+  "versionName": "26.3.2-mod.2",
+  "versionCode": 260911,
+  "downloadUrl": "https://github.com/Wanttosleep2005/HanimeViewer/releases/download/v26.3.2-mod.2/Han1meViewer-v26.3.2-mod.2.apk",
+  "updateDescription": "1. 预告页改版：站方 2026-05 起停更，202605 之后的月份改为「按上市月份检索」，直接列出该月 1 日至月底上线的番剧\n2. 检查更新改为指向本仓库（jsDelivr / GitHub raw 双源回退）\n3. 移除「使用须知」强制阅读与「应用来源」校验，启动不再有任何拦截",
+  "forceUpdate": false,
+  "isShowAnnouncement": false,
+  "announcement": ""
+}

@@ -41,7 +41,9 @@
     <string name="latest_hanime_list_monthly">%s 里番新番列表</string>
     <string name="preview_discontinued_notice">自 2026 年 5 月開始，Hanime1 站方的新番預告已經停更。可選擇查看 Getchu 新番預告，可能需要 VPN 才能正常存取。</string>
     <string name="preview_month_not_updated">站方沒有更新該月度的新番預告</string>
-    <string name="preview_latest_available_title">站方最近更新的新番預告（%1$s）</string>
+    <string name="preview_archive_failed">該月上線的番劇載入失敗</string>
+    <string name="preview_archive_empty">該月還沒有已上線的番劇</string>
+    <string name="preview_archive_empty_hint">站方預告停更後，這裡改為依上市月份列出已經上線的番劇。選到還沒到的月份時可能暫時沒有內容。</string>
     <string name="visit_web_version">造訪網頁版</string>
     <string name="latest_hanime_comment">%s 新番留言區</string>
     <string name="view_getchu_preview">查看 Getchu 預告</string>

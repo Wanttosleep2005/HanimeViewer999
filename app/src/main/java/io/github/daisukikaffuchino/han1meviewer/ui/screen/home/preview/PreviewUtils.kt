@@ -67,3 +67,35 @@ internal suspend fun centerPreviewTourItem(
     if (index < 0) return
     listState.animateScrollToItem(index)
 }
+
+/**
+ * 站方新番预告的最后一期是 `202604`；`/previews/{yyyyMM}` 从 `202605` 起整段返回 HTTP 500。
+ *
+ * 该月及其之后的月份不再走预告接口，改用「按上市月份检索」
+ * （见 [io.github.daisukikaffuchino.han1meviewer.logic.NetworkRepo.getHanimeArchiveByMonth]）。
+ */
+internal const val PREVIEW_DISCONTINUED_FROM = "202605"
+
+/**
+ * 判断某个日期码（yyyyMM）是否落在站方预告停更区间。
+ *
+ * 六位数字字符串的字典序与数值序一致，所以直接比较即可。
+ */
+internal fun isPreviewDiscontinued(code: String): Boolean =
+    code.length == 6 && code >= PREVIEW_DISCONTINUED_FROM
+
+/**
+ * 从日期码（yyyyMM）解析年份，格式不对时返回 null。
+ */
+internal fun previewYearOf(code: String): Int? =
+    if (code.length == 6) code.substring(0, 4).toIntOrNull() else null
+
+/**
+ * 从日期码（yyyyMM）解析月份，格式不对时返回 null。
+ */
+internal fun previewMonthOf(code: String): Int? =
+    if (code.length == 6) {
+        code.substring(4, 6).toIntOrNull()?.takeIf { it in 1..12 }
+    } else {
+        null
+    }

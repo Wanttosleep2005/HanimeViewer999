@@ -61,7 +61,9 @@ class HomePageViewModel: ViewModel() {
     }
 
     fun initializeHomePage() {
-        if (!SettingsRepository.usageNoticeAccepted || !SettingsRepository.usageSourceVerified) return
+        // 【自用构建】原来这里要求「使用须知已接受 + 应用来源已验证」才放行，
+        // 那是给公开分发用的门禁。本构建已去掉这两个对话框，门禁一并移除，
+        // 免得旧版本残留的 false 把首页数据挡在门外。
         if (initializationJob != null || _appUpdateState.value !is AppUpdateState.Checking) return
         initializationJob = viewModelScope.launch {
             val updateResult = AppUpdateChecker.checkForUpdate()
@@ -86,7 +88,7 @@ class HomePageViewModel: ViewModel() {
     }
 
     fun getHomePage(isRefresh: Boolean = false){
-        if (!SettingsRepository.usageNoticeAccepted || !SettingsRepository.usageSourceVerified) return
+        // 【自用构建】同上，不再校验使用须知 / 来源标志
         when (val updateState = _appUpdateState.value) {
             AppUpdateState.Checking -> {
                 initializeHomePage()

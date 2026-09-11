@@ -42,21 +42,6 @@ import javax.net.ssl.SSLHandshakeException
  */
 object NetworkRepo {
 
-    /**
-     * 【预告页月份回退】回溯窗口，单位：月。
-     *
-     * 站方自 2026-05 起停止更新新番预告，`/previews/{yyyyMM}` 对该月及之后整段返回 500。
-     * 实测 2026-09 打开时，`202605`~`202611` 全是 500（Laravel "Server Error" 页，约 2.5KB），
-     * 而 `202604` 及之前都是 200 且有完整内容。所以窗口取 12 个月足够覆盖到"最后一个有数据的月份"。
-     */
-    private const val PREVIEW_LOOKBACK_MONTHS = 12
-
-    /**
-     * 上一次真的取到内容的预告月份。命中它可以免掉一整串回溯请求。
-     */
-    @Volatile
-    private var lastGoodPreviewMonth: String? = null
-
     //<editor-fold desc="Hanime">
 
     fun getHomePage() = websiteIOFlow(
@@ -84,100 +69,38 @@ object NetworkRepo {
         action = Parser::hanimeVideoVer2
     )
 
-    /**
-     * 原有的单月请求：请求哪个月就返回哪个月，拿不到就报错。
-     *
-     * 保留不动。停更月份依然会走到"站方没有更新该月度的新番预告"那一支。
-     */
     fun getHanimePreview(date: String) = websiteIOFlow(
         request = { HanimeNetwork.hanimeService.getHanimePreview(date) },
         action = Parser::hanimePreview
     )
 
     /**
-     * 【额外增加的一条路】带月份回退的预告请求。
+     * 【月度归档】按「上市月份」检索该月全部上市的番剧。
      *
-     * 站方 `/previews/{月份}` 并不是每个月都有数据：自 2026-05 起整段返回 HTTP 500
-     * （Laravel 的 "Server Error" 页，约 2.5KB）。实测 2026-09 打开时
-     * `202605`~`202611` 全是 500，而 `202604` 及之前都是 200 且有完整内容。
+     * 站方的 `/previews/{yyyyMM}` 只更新到 2026-04，自 `202605` 起整段返回 HTTP 500，
+     * 所以停更之后的月份不能再当"预告"来展示。好在搜索接口本身就支持按上市年月筛选，
+     * 参数形如 `date=2026 年 8 月`（与 [io.github.daisukikaffuchino.han1meviewer.ui.viewmodel.SearchViewModel.getSearchDate]
+     * 拼出来的格式一致）：
      *
-     * 这个函数不取代 [getHanimePreview]，而是把请求月份当起点**逐月往前回溯**
-     * （窗口见 [PREVIEW_LOOKBACK_MONTHS]），取第一个真的能解析出内容的月份，
-     * 用来把"站方最后更新过、目前仍然在线"的那一期预告也展示出来。
+     *     /search?sort=最新上市&date=2026 年 8 月
      *
-     * 回退时会把 [HanimePreview.actualDate] 填成真实月份、并把 `hasNext` 置为 false，
-     * 让调用方知道该以哪个月作为展示与翻页的锚点。
+     * 它返回的是**该月已经上市**的番剧，正好用来顶替停更月份的预告 ——
+     * 打开 2026/8 列出的就是 8 月 1 日至 8 月底上线的那一批。
+     *
+     * @param year 年份，如 2026
+     * @param month 月份 (1-12)
+     * @param page 页码，从 1 开始
      */
-    fun getHanimePreviewWithFallback(date: String) = flow {
-        emit(WebsiteState.Loading)
-
-        // 候选顺序：① 用户要的月份；② 上次成功过的月份（命中就省掉一串回溯请求）；
-        // ③ 从请求月份起逐月往前，直到回溯窗口用尽。
-        val candidates = buildList {
-            add(date)
-            lastGoodPreviewMonth?.takeIf { it != date }?.let(::add)
-            var cursor = date
-            repeat(PREVIEW_LOOKBACK_MONTHS) {
-                cursor = cursor.previousMonthCode() ?: return@repeat
-                add(cursor)
-            }
-        }.distinct()
-
-        var lastError: Throwable? = null
-
-        for (month in candidates) {
-            try {
-                val response = HanimeNetwork.hanimeService.getHanimePreview(month)
-                val body = response.body()?.string()
-                if (!response.isSuccessful || body.isNullOrBlank()) continue
-
-                val state = Parser.hanimePreview(body)
-                if (state !is WebsiteState.Success) continue
-                // 200 不等于有数据：预告条目和轮播都空时同样按"该月没内容"处理
-                if (state.info.previewInfo.isEmpty() && state.info.latestHanime.isEmpty()) continue
-
-                lastGoodPreviewMonth = month
-                val fellBack = month != date
-                emit(
-                    WebsiteState.Success(
-                        state.info.copy(
-                            requestedDate = date,
-                            actualDate = month,
-                            // 发生回退 = 请求月份及之后的月份都没数据了。
-                            // 这时若仍显示站点的"下一月"按钮，点下去只会被再次回退回来，
-                            // 表现为"点了没反应"，不如直接收起来。
-                            hasNext = if (fellBack) false else state.info.hasNext,
-                        )
-                    )
-                )
-                return@flow
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                lastError = e
-            }
-        }
-
-        emit(
-            WebsiteState.Error(
-                lastError?.let(::handleException)
-                    ?: HanimeNotFoundException(
-                        "站点暂无新番预告数据（已回溯 $PREVIEW_LOOKBACK_MONTHS 个月）"
-                    )
+    fun getHanimeArchiveByMonth(year: Int, month: Int, page: Int) = pageIOFlow(
+        request = {
+            HanimeNetwork.hanimeService.getHanimeSearchResult(
+                page = page,
+                sort = "最新上市",
+                date = "$year 年 $month 月",
             )
-        )
-    }.flowOn(Dispatchers.IO)
-
-    /**
-     * `yyyyMM` 往前推一个月；格式不对时返回 null。
-     */
-    private fun String.previousMonthCode(): String? {
-        if (length != 6) return null
-        val year = substring(0, 4).toIntOrNull() ?: return null
-        val month = substring(4, 6).toIntOrNull() ?: return null
-        if (month !in 1..12) return null
-        return if (month == 1) "%04d12".format(year - 1) else "%04d%02d".format(year, month - 1)
-    }
+        },
+        action = Parser::hanimeSearch
+    )
 
     //获取订阅或者可以说是关注列表及它们的更新
     fun getMySubscriptions(page: Int) = websiteIOFlow(

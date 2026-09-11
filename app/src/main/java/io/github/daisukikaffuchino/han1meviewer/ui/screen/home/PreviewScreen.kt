@@ -38,9 +38,14 @@ import io.github.daisukikaffuchino.han1meviewer.ui.screen.home.preview.PreviewIm
 import io.github.daisukikaffuchino.han1meviewer.ui.screen.home.preview.PreviewMonthHeaderState
 import io.github.daisukikaffuchino.han1meviewer.ui.screen.home.preview.PreviewRouteUiState
 import io.github.daisukikaffuchino.han1meviewer.ui.screen.home.preview.PreviewUiState
+import io.github.daisukikaffuchino.han1meviewer.ui.screen.home.preview.currentCodeFrom
+import io.github.daisukikaffuchino.han1meviewer.ui.screen.home.preview.isPreviewDiscontinued
+import io.github.daisukikaffuchino.han1meviewer.ui.screen.home.preview.previewMonthOf
+import io.github.daisukikaffuchino.han1meviewer.ui.screen.home.preview.previewYearOf
 import io.github.daisukikaffuchino.han1meviewer.ui.screen.home.preview.shiftMonthCode
 import io.github.daisukikaffuchino.han1meviewer.ui.screen.home.preview.toNormalDateLabel
 import kotlinx.coroutines.launch
+import java.time.LocalDate
 
 /**
  * 预览页面 Screen 层。
@@ -70,6 +75,7 @@ fun PreviewScreen(
     val uriHandler = LocalUriHandler.current
     val imageLoader = remember(context) { SingletonImageLoader.get(context) }
     val previewState = previewViewModel.previewFlow.collectAsStateWithLifecycle().value
+    val archiveState = previewViewModel.archiveFlow.collectAsStateWithLifecycle().value
     val commentCount = PreviewCommentPrefetcher.here(commentViewModel)
         .commentFlow
         .collectAsStateWithLifecycle()
@@ -114,6 +120,14 @@ fun PreviewScreen(
     var monthAnimationDirection by remember { mutableIntStateOf(1) }
     val currentDateCode = routeState.currentDateCode
     val selectedIndex = routeState.selectedIndex
+    /** 当前月份是否已进入站方预告停更区间（202605 起）：是则改用「按上市月份检索」 */
+    val isArchiveMonth = remember(currentDateCode) { isPreviewDiscontinued(currentDateCode) }
+
+    val currentDateLabel = remember(currentDateCode) { toNormalDateLabel(currentDateCode) }
+    val prevDateCode = remember(currentDateCode) { shiftMonthCode(currentDateCode, -1) }
+    val nextDateCode = remember(currentDateCode) { shiftMonthCode(currentDateCode, 1) }
+    val prevDateLabel = remember(prevDateCode) { toNormalDateLabel(prevDateCode) }
+    val nextDateLabel = remember(nextDateCode) { toNormalDateLabel(nextDateCode) }
 
     val displayState = remember(currentDateCode, previewState) {
         val cached = previewViewModel.getCachedPreview(currentDateCode)
@@ -126,33 +140,34 @@ fun PreviewScreen(
 
     val success = displayState as? WebsiteState.Success
     val previewInfoList = success?.info?.previewInfo.orEmpty()
-
-    // 额外内容：站方最后更新过、目前仍然在线的那一期预告。
-    // 它只用来"补一块"内容，不参与标题、翻页和评论锚点——那些仍然以用户请求的月份为准。
-    val fallbackState = previewViewModel.fallbackFlow.collectAsStateWithLifecycle().value
-    val fallbackSuccess = fallbackState as? WebsiteState.Success
-    val fallbackMonthLabel = remember(fallbackSuccess?.info?.actualDate) {
-        fallbackSuccess?.info?.actualDate?.takeIf { it.isNotBlank() }?.let(::toNormalDateLabel)
-    }
-
-    val currentDateLabel = remember(currentDateCode) { toNormalDateLabel(currentDateCode) }
-    val prevDateCode = remember(currentDateCode) { shiftMonthCode(currentDateCode, -1) }
-    val nextDateCode = remember(currentDateCode) { shiftMonthCode(currentDateCode, 1) }
-    val prevDateLabel = remember(prevDateCode) { toNormalDateLabel(prevDateCode) }
-    val nextDateLabel = remember(nextDateCode) { toNormalDateLabel(nextDateCode) }
     val previewPagerState = rememberPagerState(
         initialPage = selectedIndex,
         pageCount = { previewInfoList.size.coerceAtLeast(1) })
     val scope = rememberCoroutineScope()
 
-    val canPrev = when (displayState) {
-        is WebsiteState.Loading -> false
-        is WebsiteState.Success -> displayState.info.hasPrevious
-        is WebsiteState.Error -> true
+    // 【月度归档】停更月份不发预告请求，displayState 会一直停在 Loading，
+    // 沿用原判断会让上下月按钮双双变灰、根本翻不了月。这里单给一个翻月区间：
+    // 往前不限（可以翻回仍有预告的历史月份），往后不超过本月。
+    val thisMonthCode = remember {
+        val now = LocalDate.now()
+        currentCodeFrom(now.year, now.monthValue)
     }
-    val canNext = when (displayState) {
-        is WebsiteState.Success -> displayState.info.hasNext
-        else -> false
+    val canPrev = if (isArchiveMonth) {
+        true
+    } else {
+        when (displayState) {
+            is WebsiteState.Loading -> false
+            is WebsiteState.Success -> displayState.info.hasPrevious
+            is WebsiteState.Error -> true
+        }
+    }
+    val canNext = if (isArchiveMonth) {
+        currentDateCode < thisMonthCode
+    } else {
+        when (displayState) {
+            is WebsiteState.Success -> displayState.info.hasNext
+            else -> false
+        }
     }
     val monthHeaderState = remember(
         currentDateCode,
@@ -184,8 +199,7 @@ fun PreviewScreen(
         canNext = canNext,
         monthHeaderState = monthHeaderState,
         imageViewerState = imageViewerState,
-        fallbackState = fallbackState,
-        fallbackMonthLabel = fallbackMonthLabel,
+        archiveState = archiveState,
     )
 
     val handleEvent: (PreviewEvent) -> Unit = { event ->
@@ -229,18 +243,34 @@ fun PreviewScreen(
                 previewViewModel.preloadPreview(shiftMonthCodeForPreview(code, -1))
                 previewViewModel.preloadPreview(shiftMonthCodeForPreview(code, 1))
                 PreviewCommentPrefetcher.here(commentViewModel).fetch(PREVIEW_COMMENT_PREFIX, code)
-                previewViewModel.getLatestAvailablePreview(code)
+            }
+            // 【月度归档】停更月份：滚到底加载下一页 / 首屏失败重试
+            PreviewEvent.OnLoadMoreArchive -> previewViewModel.loadMoreArchive()
+            PreviewEvent.OnRetryArchive -> {
+                val year = previewYearOf(currentDateCode)
+                val month = previewMonthOf(currentDateCode)
+                if (year != null && month != null) {
+                    previewViewModel.loadArchiveMonth(year, month, force = true)
+                }
             }
         }
     }
 
     LaunchedEffect(currentDateCode) {
-        previewViewModel.getHanimePreview(currentDateCode)
-        previewViewModel.preloadPreview(shiftMonthCodeForPreview(currentDateCode, -1))
-        previewViewModel.preloadPreview(shiftMonthCodeForPreview(currentDateCode, 1))
+        if (isArchiveMonth) {
+            // 站方预告已停更：改走「按上市月份检索」，列出该月 1 日至月底上线的番剧。
+            val year = previewYearOf(currentDateCode)
+            val month = previewMonthOf(currentDateCode)
+            if (year != null && month != null) {
+                previewViewModel.loadArchiveMonth(year, month)
+            }
+        } else {
+            previewViewModel.clearArchive()
+            previewViewModel.getHanimePreview(currentDateCode)
+            previewViewModel.preloadPreview(shiftMonthCodeForPreview(currentDateCode, -1))
+            previewViewModel.preloadPreview(shiftMonthCodeForPreview(currentDateCode, 1))
+        }
         PreviewCommentPrefetcher.here(commentViewModel).fetch(PREVIEW_COMMENT_PREFIX, currentDateCode)
-        // 额外并行拉一份"最后更新过的那一期"，停更期间用来补内容
-        previewViewModel.getLatestAvailablePreview(currentDateCode)
         routeState = routeState.copy(selectedIndex = 0)
     }
 

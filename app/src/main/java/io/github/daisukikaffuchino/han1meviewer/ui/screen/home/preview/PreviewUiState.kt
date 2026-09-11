@@ -1,6 +1,7 @@
 package io.github.daisukikaffuchino.han1meviewer.ui.screen.home.preview
 
 import androidx.compose.runtime.saveable.listSaver
+import io.github.daisukikaffuchino.han1meviewer.logic.model.HanimeInfo
 import io.github.daisukikaffuchino.han1meviewer.logic.model.HanimePreview
 import io.github.daisukikaffuchino.han1meviewer.logic.state.WebsiteState
 
@@ -58,6 +59,34 @@ data class PreviewImageViewerState(
 )
 
 /**
+ * 【月度归档】站方停更月份（`202605` 起）的展示状态。
+ *
+ * 这些月份的 `/previews/{yyyyMM}` 整段返回 500，页面改为按上市月份检索，
+ * 列出该月 1 日至月底上线的全部番剧 —— 它们已经上映，不再具有"预告"性质。
+ *
+ * @param items 已加载的番剧
+ * @param isLoading 首屏是否在加载
+ * @param isLoadingMore 是否在加载下一页
+ * @param hasError 最近一次请求是否失败
+ * @param noMoreData 是否已经没有更多数据
+ * @param loadedPages 已成功加载的页数
+ */
+data class PreviewArchiveUiState(
+    val items: List<HanimeInfo> = emptyList(),
+    val isLoading: Boolean = true,
+    val isLoadingMore: Boolean = false,
+    val hasError: Boolean = false,
+    val noMoreData: Boolean = false,
+    val loadedPages: Int = 0,
+) {
+    /** 是否有可展示的内容 */
+    val hasItems: Boolean get() = items.isNotEmpty()
+
+    /** 首屏加载失败且没有任何内容 */
+    val isFatalError: Boolean get() = hasError && items.isEmpty()
+}
+
+/**
  * 预览页面 UI 状态。
  *
  * @param routeState 路由/翻页状态
@@ -71,10 +100,8 @@ data class PreviewImageViewerState(
  * @param canNext 是否可切换到下一月
  * @param monthHeaderState 月份头部状态
  * @param imageViewerState 图片查看器状态，null 表示未打开
- * @param fallbackState 【额外内容】站方最后更新过的那一期预告的加载状态。
- *        只有在请求月份已经停更（`actualDate != requestedDate`）时才会被展示，
- *        用来在"站方没有更新该月度"的提示下面补一块仍然在线的真实内容。
- * @param fallbackMonthLabel 额外内容对应的月份标签（如 "2026/4"），无额外内容时为 null
+ * @param archiveState 【月度归档】非 null 表示当前月份已停更，页面展示的是
+ *        「按上市月份检索」的结果，而不是站方预告。此时 [displayState] 不参与渲染。
  */
 data class PreviewUiState(
     val routeState: PreviewRouteUiState = PreviewRouteUiState(),
@@ -88,8 +115,7 @@ data class PreviewUiState(
     val canNext: Boolean = false,
     val monthHeaderState: PreviewMonthHeaderState,
     val imageViewerState: PreviewImageViewerState? = null,
-    val fallbackState: WebsiteState<HanimePreview>? = null,
-    val fallbackMonthLabel: String? = null,
+    val archiveState: PreviewArchiveUiState? = null,
 )
 
 /**
@@ -128,4 +154,10 @@ sealed interface PreviewEvent {
 
     /** 重试加载 */
     data object OnRetryLoad : PreviewEvent
+
+    /** 【月度归档】加载下一页 */
+    data object OnLoadMoreArchive : PreviewEvent
+
+    /** 【月度归档】首屏加载失败后重试 */
+    data object OnRetryArchive : PreviewEvent
 }

@@ -42,7 +42,6 @@ import io.github.daisukikaffuchino.han1meviewer.HCacheManager
 import io.github.daisukikaffuchino.han1meviewer.logic.exception.CloudflareBlockedException
 import io.github.daisukikaffuchino.han1meviewer.logic.state.PageState
 import io.github.daisukikaffuchino.han1meviewer.ui.activity.MainActivity
-import io.github.daisukikaffuchino.han1meviewer.ui.component.UsageNoticeDialog
 import io.github.daisukikaffuchino.han1meviewer.ui.component.HapticTextButton as TextButton
 import io.github.daisukikaffuchino.han1meviewer.ui.component.ConfirmDialog
 import io.github.daisukikaffuchino.han1meviewer.ui.navigation.main.HomeRoute
@@ -80,25 +79,9 @@ fun MainActivityContent(
     val scope = rememberCoroutineScope()
     val clipboard = LocalClipboard.current
     val snackbarHostState = remember { SnackbarHostState() }
-    var showUsageNotice by remember { mutableStateOf(!SettingsRepository.usageNoticeAccepted) }
-    var showSourceDialog by remember {
-        mutableStateOf(
-            SettingsRepository.usageNoticeAccepted &&
-                    !SettingsRepository.usageSourceVerified &&
-                    !SettingsRepository.usageSourcePending,
-        )
-    }
-    var showSourceWarning by rememberSaveable {
-        mutableStateOf(
-            SettingsRepository.usageNoticeAccepted &&
-                    !SettingsRepository.usageSourceVerified &&
-                    SettingsRepository.usageSourcePending,
-        )
-    }
-    var sourceLink by rememberSaveable { mutableStateOf("") }
-    var appAccessGranted by remember {
-        mutableStateOf(SettingsRepository.usageNoticeAccepted && SettingsRepository.usageSourceVerified)
-    }
+    // 【自用构建】已移除「使用须知」20 秒强制阅读与「应用来源」校验两套拦截：
+    // AppSettings 里这两个标志位默认就是 true，判定逻辑也已从调用方删除，
+    // 启动后不会再弹任何拦截对话框，首页数据也不再受它们影响。
     val isDrawerOpen =
         drawerState.currentValue == DrawerValue.Open || drawerState.targetValue == DrawerValue.Open
 
@@ -202,20 +185,19 @@ fun MainActivityContent(
         },
     ) {
         Box(modifier = Modifier.fillMaxSize()) {
-            if (appAccessGranted) {
-                TopNavigation(
-                    activity = activity,
-                    backStack = backStack,
-                    isDrawerOpen = isDrawerOpen && !permanentDrawer,
-                    showHomeNavigationIcon = !permanentDrawer,
-                    homeContentStartPadding = if (permanentDrawer) 280.dp else 0.dp,
-                    onOpenDrawer = {
-                        if (drawerEnabled) {
-                            scope.launch { drawerState.open() }
-                        }
-                    },
-                )
-            }
+            // 自用构建：不再用 appAccessGranted 拦截，内容始终可见
+            TopNavigation(
+                activity = activity,
+                backStack = backStack,
+                isDrawerOpen = isDrawerOpen && !permanentDrawer,
+                showHomeNavigationIcon = !permanentDrawer,
+                homeContentStartPadding = if (permanentDrawer) 280.dp else 0.dp,
+                onOpenDrawer = {
+                    if (drawerEnabled) {
+                        scope.launch { drawerState.open() }
+                    }
+                },
+            )
             if (showAuthGuard) {
                 Box(
                     modifier = Modifier
@@ -223,86 +205,8 @@ fun MainActivityContent(
                         .background(Color.Black.copy(alpha = 0.55f)),
                 )
             }
-            UsageNoticeDialog(
-                visible = showUsageNotice,
-                onAccepted = {
-                    scope.launch {
-                        SettingsRepository.setUsageNoticeAccepted(true)
-                        showUsageNotice = false
-                        if (SettingsRepository.usageSourceVerified) {
-                            appAccessGranted = true
-                            viewModel.initializeHomePage()
-                        } else if (SettingsRepository.usageSourcePending) {
-                            showSourceWarning = true
-                        } else {
-                            showSourceDialog = true
-                        }
-                    }
-                },
-                onDeclined = { activity.finish() },
-            )
-            AppSourceDialog(
-                visible = showSourceDialog,
-                onSelect = { source ->
-                    if (source.equals("github", ignoreCase = true)) {
-                        scope.launch {
-                            SettingsRepository.update {
-                                it.copy(
-                                    usageSourceVerified = true,
-                                    usageSourcePending = false
-                                )
-                            }
-                            showSourceDialog = false
-                            appAccessGranted = true
-                            viewModel.initializeHomePage()
-                        }
-                    } else {
-                        scope.launch {
-                            SettingsRepository.setUsageSourcePending(true)
-                            showSourceDialog = false
-                            sourceLink = ""
-                            showSourceWarning = true
-                        }
-                    }
-                },
-            )
-            if (showSourceWarning) {
-                val expectedRepository = "https://github.com/daisukiKaffuChino/Han1meViewer"
-                val linkValid = sourceLink.trim().equals(expectedRepository, ignoreCase = true)
-                AlertDialog(
-                    onDismissRequest = {},
-                    title = { Text(stringResource(R.string.app_source_illegal_title)) },
-                    text = {
-                        androidx.compose.foundation.layout.Column {
-                            Text(stringResource(R.string.app_source_illegal_message))
-                            OutlinedTextField(
-                                value = sourceLink,
-                                onValueChange = { sourceLink = it },
-                                label = { Text(stringResource(R.string.app_source_repository_link)) },
-                                singleLine = true,
-                            )
-                        }
-                    },
-                    confirmButton = {
-                        TextButton(
-                            enabled = linkValid,
-                            onClick = {
-                                scope.launch {
-                                    SettingsRepository.update {
-                                        it.copy(
-                                            usageSourceVerified = true,
-                                            usageSourcePending = false
-                                        )
-                                    }
-                                    showSourceWarning = false
-                                    appAccessGranted = true
-                                    viewModel.initializeHomePage()
-                                }
-                            },
-                        ) { Text(stringResource(R.string.app_source_verify)) }
-                    },
-                )
-            }
+            // 【自用构建】原来的「使用须知 20 秒强制阅读」「应用来源选择」「来源非法警告」
+            // 三个对话框已整块移除，启动后不再有任何拦截；来源校验由上方 LaunchedEffect 直接放行。
             SnackbarHost(
                 hostState = snackbarHostState,
                 modifier = Modifier
@@ -340,49 +244,4 @@ fun MainActivityContent(
     )
 }
 
-@Composable
-private fun AppSourceDialog(
-    visible: Boolean,
-    onSelect: (String) -> Unit,
-) {
-    if (!visible) return
-
-    var selectedSource by rememberSaveable { mutableStateOf<String?>(null) }
-    val options = listOf(
-        stringResource(R.string.app_source_forum) to "forum",
-        stringResource(R.string.app_source_telegram) to "telegram",
-        stringResource(R.string.app_source_github) to "github",
-        stringResource(R.string.app_source_qq_group) to "qq_group",
-        stringResource(R.string.app_source_wechat) to "wechat",
-        stringResource(R.string.app_source_douyin_tiktok) to "douyin_tiktok",
-    )
-    AlertDialog(
-        onDismissRequest = {},
-        title = { Text(stringResource(R.string.app_source_title)) },
-        text = {
-            Column {
-                options.forEach { (label, value) ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { selectedSource = value }
-                            .padding(vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        RadioButton(
-                            selected = selectedSource == value,
-                            onClick = { selectedSource = value },
-                        )
-                        Text(label)
-                    }
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(
-                enabled = selectedSource != null,
-                onClick = { selectedSource?.let(onSelect) },
-            ) { Text(stringResource(R.string.app_source_confirm)) }
-        },
-    )
-}
+// 【自用构建】AppSourceDialog（应用来源选择）已整体移除，不再需要。

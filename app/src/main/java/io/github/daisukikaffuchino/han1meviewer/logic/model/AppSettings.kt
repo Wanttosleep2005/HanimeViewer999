@@ -103,8 +103,11 @@ data class AppSettings(
     val tabletMode: Boolean = false,
     val largeScreenTabletModeHintShown: Boolean = false,
     val videoLandscapeLayoutStyle: VideoLandscapeLayoutStyle = VideoLandscapeLayoutStyle.Classic,
-    val usageNoticeAccepted: Boolean = false,
-    val usageSourceVerified: Boolean = false,
+    // 【自用构建】跳过「使用须知」20 秒强制阅读与「应用来源」校验：
+    // 默认即为已接受 / 已验证，启动后不会再弹出任何拦截对话框。
+    // 这两项同时被 HomePageViewModel 用作数据加载开关，置 true 可保证首页照常加载。
+    val usageNoticeAccepted: Boolean = true,
+    val usageSourceVerified: Boolean = true,
     val usageSourcePending: Boolean = false,
     val isAlreadyLogin: Boolean = false,
     val localListNoticeDismissed: Boolean = false,

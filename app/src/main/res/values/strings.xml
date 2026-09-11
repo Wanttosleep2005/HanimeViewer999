@@ -41,7 +41,9 @@
     <string name="latest_hanime_list_monthly">%s New Anime List</string>
     <string name="preview_discontinued_notice">Since May 2026, Hanime1 has stopped updating new anime previews. You can view Getchu previews instead; a VPN may be required for normal access.</string>
     <string name="preview_month_not_updated">The site has not updated the preview for this month.</string>
-    <string name="preview_latest_available_title">Latest available previews (%1$s)</string>
+    <string name="preview_archive_failed">Failed to load this month\'s releases</string>
+    <string name="preview_archive_empty">No releases this month yet</string>
+    <string name="preview_archive_empty_hint">The site stopped posting previews, so this page now lists titles actually released in the selected month. A month that has not arrived yet may still be empty.</string>
     <string name="visit_web_version">Visit website</string>
     <string name="latest_hanime_comment">%s Anime Comments</string>
     <string name="view_getchu_preview">View Getchu Preview</string>
