@@ -1,5 +1,7 @@
 package io.github.daisukikaffuchino.han1meviewer.logic.njav
 
+import io.github.daisukikaffuchino.han1meviewer.logic.exception.ParseException
+
 /**
  * nJAV 详情页把真正的播放地址藏在 Dean Edwards 风格的 packer 里，形如：
  *
@@ -19,12 +21,52 @@ object NjavPacker {
 
     private const val PACKER_MARK = "eval(function(p,a,c,k,e,"
 
-    /** 匹配 packer 的调用尾巴：`}('p',a,c,'k'.split('|'),0,{}))` */
-    private val PACKED = Regex(
-        """}\(\s*'((?:\\.|[^'\\])*)'\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*'((?:\\.|[^'\\])*)'\s*\.split\('\|'\)"""
-    )
+    /**
+     * 匹配 packer 的调用尾巴：`}('p',a,c,'k'.split('|'),0,{}))`
+     *
+     * ⚠️⚠️ **开头的 `}` 必须写成 `\}`。**
+     *
+     * 裸 `}` 在桌面 JVM 的 `java.util.regex` 里是合法字面量，但 **Android 的
+     * `java.util.regex` 是 ICU4C 后端**，ICU 把它判为**语法错误**
+     * （`U_REGEX_RULE_SYNTAX`）。也就是说这条正则**只在手机上炸**：
+     * PC 上跑离线脚本、单元测试全都正常（实测：Java `Pattern.compile` 通过，
+     * ICU `uregex_open` 报错），极其容易漏。
+     *
+     * 后果还远不止「匹配不到」——它写在 `object` 的字段初始化里，也就是 `<clinit>`：
+     * 一旦抛 `PatternSyntaxException`，**这个类会被永久标记为「初始化失败」**，
+     * 之后**每次**引用都变成 `NoClassDefFoundError: <类的全限定名>`，
+     * 报错里只有一个类名、看不出任何原因。mod.6.5 之前用户看到的
+     * 「加载失败，请重试 / io.github.…logic.njav.NjavPacker」就是它 ——
+     * 这条线索把排查带偏了整整一轮（网络、反爬、DNS 全查过一遍）。
+     * 而且它只打详情页：列表页不经过 [NjavPacker]，所以「列表正常、点进去必挂」。
+     *
+     * 现在改为 [compileRegex] + `by lazy`：正则写错也只是每次调用抛一条带说明的
+     * 异常，不会再把整个类搞成永久不可用。
+     */
+    private val PACKED by lazy {
+        compileRegex(
+            """\}\(\s*'((?:\\.|[^'\\])*)'\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*'((?:\\.|[^'\\])*)'\s*\.split\('\|'\)"""
+        )
+    }
 
-    private val M3U8 = Regex("""https?://[^\s'"\\<>]+\.m3u8""")
+    private val M3U8 by lazy {
+        compileRegex("""https?://[^\s'"\\<>]+\.m3u8""")
+    }
+
+    /**
+     * 编译正则，失败时给出**能看懂**的异常。
+     *
+     * 不把 `Regex(…)` 直接写在字段上的两个理由：
+     * 1. `<clinit>` 里抛异常会让整个类永久不可用，且报错只剩类名（见 [PACKED] 的说明）；
+     * 2. 用 `lazy` 之后，正则即使写错，也只是每次调用抛一条带原因的
+     *    [ParseException]，类本身仍可用，问题一眼可见。
+     */
+    private fun compileRegex(pattern: String): Regex =
+        runCatching { Regex(pattern) }.getOrElse { cause ->
+            throw ParseException(
+                "nJAV 解包正则编译失败（Android 的 ICU 正则引擎比桌面 JVM 严格）：${cause.message}"
+            )
+        }
 
     /** 还原 body 里所有 packer 块并拼接；没有 packer 时返回空串。 */
     fun unpackAll(body: String): String {

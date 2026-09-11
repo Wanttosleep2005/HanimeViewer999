@@ -1,8 +1,8 @@
 {
-  "versionName": "26.3.2-mod.6.5",
-  "versionCode": 260919,
-  "downloadUrl": "https://github.com/ddsmie4t2g/HanimeViewer/releases/download/v26.3.2-mod.6.5/Han1meViewer-v26.3.2-mod.6.5.apk",
-  "updateDescription": "1. 修好「nJAV 点进去加载不出来」的真因：njavtv.com 的域名解析被投毒，系统 DNS 会把域名解析到完全连不上的错误 IP（Facebook 的地址段），公共 DoH（阿里）同样返回错误结果。此前的表现是每次点进影片都加载失败，容易被误判成「反爬」或「播放器不兼容」。现改为内置实测可用的节点，不再依赖系统 DNS。\n2. 修好「检查更新能弹出、但安装包下不动 / 下到一半失败」：更新下载改用内置节点解析 GitHub 域名（不再被污染解析拖死），读超时放宽到 60 秒，并支持断点续传、同源重试与安装包完整性校验（文件头校验，拦截镜像返回的错误页）。\n3. 清理掉一批已经失效的加速镜像（实测十几个公共镜像几乎全部不可用），避免在一个个死源上白等。",
+  "versionName": "26.3.2-mod.6.6",
+  "versionCode": 260920,
+  "downloadUrl": "https://github.com/ddsmie4t2g/HanimeViewer/releases/download/v26.3.2-mod.6.6/Han1meViewer-v26.3.2-mod.6.6.apk",
+  "updateDescription": "1. 修好「nJAV 点进影片必加载失败」的真凶：解包播放地址用的正则，开头有个没转义的 }。这条正则在电脑上跑完全正常，但手机上的正则引擎（ICU）直接判它语法错误 —— 而它写在类的静态初始化里，一炸就把整个类标记成永久不可用，之后每次点进去只剩一句「NjavPacker」的报错，看不出任何原因。现在已改为手机上也合法的写法。此前「列表正常、点进去就挂」正是这个原因（列表不走这条正则）。\n2. nJAV 的报错不再被通用文案盖掉：现在会明确告诉你是哪一步失败、哪个环节出错，方便定位。\n3. 顺带把全工程 49 条正则逐条用 ICU 引擎校验过一遍，没有别的同类隐患。",
   "forceUpdate": false,
   "isShowAnnouncement": false,
   "announcement": ""

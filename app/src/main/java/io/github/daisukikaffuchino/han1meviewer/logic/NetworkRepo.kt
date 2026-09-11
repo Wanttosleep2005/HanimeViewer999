@@ -619,7 +619,7 @@ object NetworkRepo {
         }
         emit(NjavParser.homePage(sections))
     }.catch { e ->
-        emit(WebsiteState.Error(handleException(e)))
+        emit(WebsiteState.Error(handleNjavException(e)))
     }.flowOn(Dispatchers.IO)
 
     /** nJAV 列表页（分类 / 搜索）通用管线。 */
@@ -641,7 +641,7 @@ object NetworkRepo {
             }
         )
     }.catch { e ->
-        emit(PageLoadingState.Error(handleException(e)))
+        emit(PageLoadingState.Error(handleNjavException(e)))
     }.flowOn(Dispatchers.IO)
 
     private fun njavVideoFlow(videoCode: String): Flow<VideoLoadingState<HanimeVideo>> = flow {
@@ -651,7 +651,7 @@ object NetworkRepo {
         }
         emit(NjavParser.video(response.body()?.string().orEmpty()))
     }.catch { e ->
-        emit(VideoLoadingState.Error(handleException(e)))
+        emit(VideoLoadingState.Error(handleNjavException(e)))
     }.flowOn(Dispatchers.IO)
 
     /**
@@ -783,6 +783,37 @@ object NetworkRepo {
                 e
             }
         }
+    }
+
+    /**
+     * nJAV 专用的异常处理。
+     *
+     * ⚠️ **刻意不复用 [handleException]**：它会把**所有** [ParseException] 的 message
+     * 一律替换成 `parse_error_msg`（"可能这个网址解析起来不太一样…"）。那条兜底文案
+     * 是给 hanime 那套「开发者风格」的 ParseException 准备的（形如
+     * `[Parse::func => var] parse error!`），但 nJAV 抛出的信息本身就是中文、
+     * 而且指明了失败在哪一步 —— 替换掉等于**把唯一的线索抹掉**。
+     *
+     * 真正踩过的坑：`NjavPacker` 的正则在 Android 上编译失败（ICU 与 JVM 的正则
+     * 差异），导致那个类被永久标记为「初始化失败」，之后每次引用都抛
+     * `NoClassDefFoundError: …logic.njav.NjavPacker`。这条消息**本身已经是全部线索**
+     * 了，要是再被通用文案盖掉，就真的无从下手。
+     *
+     * 所以这里的原则是：**有多少信息就给多少**，并且一定带上异常类名。
+     */
+    internal fun handleNjavException(e: Throwable): Throwable {
+        if (e is CancellationException) throw e
+        e.printStackTrace()
+        val detail = e.message?.takeIf { it.isNotBlank() }
+        return ParseException(
+            when {
+                // nJAV 自己抛的（"nJAV：…" / "nJAV: HTTP …"），原样保留
+                detail != null && detail.startsWith("nJAV") -> detail
+                // 其它异常（网络层 / 解析库里冒出来的）：至少让用户和日志看到是哪个类
+                detail != null -> "nJAV 加载失败（${e::class.java.simpleName}）：$detail"
+                else -> "nJAV 加载失败（${e::class.java.simpleName}）"
+            }
+        )
     }
 
     //</editor-fold>
