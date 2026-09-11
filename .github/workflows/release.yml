@@ -1,0 +1,193 @@
+name: Release (mod)
+
+# mod 线（26.3.2-mod.x）的发布流水线：CI 里编译 → 签名 → 发 GitHub Release。
+# 全程不需要本地构建。
+#
+# 与另一条 0.19.x 线（main 分支）最大的差别：
+#   本线的「检查更新」不读 tag，而是读仓库 mod 分支根目录的 update.json，
+#   版本号写死在 json 的 versionCode 字段里。所以：
+#     - tag 必须与 update.json 的 downloadUrl 中那一段一致：v<versionName>
+#     - APK 文件名必须是 Han1meViewer-v<versionName>.apk
+#       （由 app/build.gradle.kts 的 androidComponents.onVariants 决定）
+#   本工作流从编译产物文件名反推 tag，保证 tag / 文件名 / update.json 三者对得上。
+#
+# 需要的仓库 Secrets（Settings → Secrets and variables → Actions）：
+#   RELEASE_KEYSTORE_BASE64      release keystore 的 base64（单行，无换行）
+#   RELEASE_KEYSTORE_PASSWORD    keystore.password
+#   RELEASE_KEY_ALIAS            key.alias（本仓库为 hanime）
+#
+# 触发方式：
+#   1) 推 tag：git tag v26.3.2-mod.3 && git push origin v26.3.2-mod.3
+#   2) 网页 Actions → Release (mod) → Run workflow（可勾选发布为预发布）
+
+on:
+  workflow_dispatch:
+    inputs:
+      prerelease:
+        description: '发布为预发布（客户端走 releases/latest 会取不到预发布版）'
+        required: false
+        type: boolean
+        default: false
+  push:
+    tags:
+      - 'v*-mod.*'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-mod-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Build & Publish Release (mod)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: gradle
+
+      # 用 setup-gradle 直接装官方 9.4.1，绕开 gradle-wrapper.properties 里指向的
+      # 腾讯云镜像（CI 上没必要，且多一个不可控依赖）。
+      - name: Set up Gradle 9.4.1
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.4.1'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install required SDK packages
+        run: |
+          # compileSdk = 37  → platforms;android-37.0
+          # 原生库 libchino.so 走 CMake 3.22.1 + NDK 28.2.13676358
+          sdkmanager --install \
+            "platforms;android-37.0" \
+            "build-tools;37.0.0" \
+            "ndk;28.2.13676358" \
+            "cmake;3.22.1" > /dev/null
+          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
+          echo "ndk   : $(ls "$ANDROID_SDK_ROOT/ndk"   | tr '\n' ' ')"
+          echo "cmake : $(ls "$ANDROID_SDK_ROOT/cmake" | tr '\n' ' ')"
+
+      - name: Decode release keystore
+        env:
+          KS: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
+        run: |
+          if [ -z "$KS" ]; then
+            echo "::error::缺少 Secret RELEASE_KEYSTORE_BASE64，无法为 release APK 签名。"
+            echo "::error::本地执行：base64 -w0 ~/.android/keystore.jks | gh secret set RELEASE_KEYSTORE_BASE64 -R Wanttosleep2005/HanimeViewer"
+            exit 1
+          fi
+          mkdir -p "$HOME/.android"
+          printf '%s' "$KS" | base64 -di > "$HOME/.android/keystore.jks"
+          echo "keystore 已写入 $HOME/.android/keystore.jks（$(stat -c%s "$HOME/.android/keystore.jks") 字节）"
+
+      # ⚠️ app/build.gradle.kts 只认 local.properties 里的签名键（没有环境变量回退），
+      #    所以这里现造一份给 CI 用。local.properties 本身被 .gitignore 忽略，不会入库。
+      - name: Write local.properties (sdk.dir + signing)
+        env:
+          STORE_PASS: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+        run: |
+          if [ -z "$STORE_PASS" ] || [ -z "$KEY_ALIAS" ]; then
+            echo "::error::缺少 Secret RELEASE_KEYSTORE_PASSWORD / RELEASE_KEY_ALIAS。"
+            exit 1
+          fi
+          {
+            echo "sdk.dir=$ANDROID_SDK_ROOT"
+            echo "keystore.file=$HOME/.android/keystore.jks"
+            echo "keystore.password=$STORE_PASS"
+            echo "key.alias=$KEY_ALIAS"
+          } > local.properties
+          echo "local.properties 已生成："
+          sed 's/\(password=\).*/\1***/' local.properties
+
+      - name: Build release APK
+        run: gradle --console=plain --stacktrace :app:assembleRelease
+
+      - name: Resolve version from APK filename
+        id: ver
+        run: |
+          ls -l app/build/outputs/apk/release/
+          APK=$(ls app/build/outputs/apk/release/Han1meViewer-v*.apk | head -n1)
+          test -n "$APK" || { echo "::error::未找到 Han1meViewer-v*.apk"; exit 1; }
+
+          VERSION="$(basename "$APK" .apk)"
+          VERSION="${VERSION#Han1meViewer-v}"
+          TAG="v${VERSION}"
+
+          echo "apk=$APK" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "APK = $APK"
+          echo "TAG = $TAG"
+
+      # native 层 cpp/chino.h 的 EXPECTED_SIG_HASH 与签名证书硬绑定：指纹不一致时
+      # 播放页会被 native 校验直接拦下。这里先自检 —— 宁可发布失败，也不要发出一个
+      # 「装得上但播不了」的包。
+      - name: Verify APK signature matches chino.h EXPECTED_SIG_HASH
+        env:
+          APK: ${{ steps.ver.outputs.apk }}
+        run: |
+          APKSIGNER="$ANDROID_SDK_ROOT/build-tools/37.0.0/apksigner"
+          DIGEST=$("$APKSIGNER" verify --print-certs "$APK" \
+            | grep -i 'SHA-256 digest' | head -n1 \
+            | sed 's/.*: *//' | tr -d '[:space:]:' | tr 'A-F' 'a-f')
+          EXPECTED="b3ddc86cac6c6b02ac5d7a2dd40b48e2d1ee8287298dc0355fe0c048644b7a63"
+          echo "APK 证书 SHA-256 : $DIGEST"
+          echo "chino.h 期望值   : $EXPECTED"
+          if [ "$DIGEST" != "$EXPECTED" ]; then
+            echo "::error::签名指纹与 cpp/chino.h 的 EXPECTED_SIG_HASH 不一致，播放页会被 native 校验拦下。"
+            exit 1
+          fi
+          echo "签名指纹一致 ✔"
+
+      # 即使后面的 Release 创建失败，APK 也能从 workflow artifact 里捞回来。
+      - name: Upload APK as workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.ver.outputs.tag }}
+          path: ${{ steps.ver.outputs.apk }}
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Compose release notes
+        env:
+          TAG: ${{ steps.ver.outputs.tag }}
+        run: |
+          {
+            echo "第三方 Hanime1 客户端 · mod 线（数据源 hanime1.me）"
+            echo
+            echo "- 产物：arm64-v8a 单 ABI APK"
+            echo "- 版本：$TAG"
+            echo "- 签名证书 SHA-256：B3:DD:C8:6C:AC:6C:6B:02:AC:5D:7A:2D:D4:0B:48:E2:D1:EE:82:87:29:8D:C0:35:5F:E0:C0:48:64:4B:7A:63"
+            echo
+            echo "### 更新内容"
+            echo
+            git log -15 --pretty=format:'- %s' || true
+            echo
+            echo
+            echo "> 本线的「检查更新」读取本仓库 mod 分支的 update.json；发版后请确认该文件的 versionCode / downloadUrl 已指向本 release。"
+            echo "> 安装提示：若手机上装的是 debug 版（签名不同），需先卸载再安装本版本。"
+          } > release-notes.md
+          echo "----- release-notes.md -----"
+          cat release-notes.md
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.ver.outputs.tag }}
+          name: ${{ steps.ver.outputs.tag }}
+          files: ${{ steps.ver.outputs.apk }}
+          body_path: release-notes.md
+          prerelease: ${{ github.event_name == 'workflow_dispatch' && inputs.prerelease == true }}
