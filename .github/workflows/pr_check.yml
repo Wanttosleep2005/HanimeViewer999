@@ -2,6 +2,10 @@ permissions:
   contents: read
 name: Pull Request Check
 
+# PR 到 main 时做一次编译验证。构建前提与 ci.yml 完全相同
+# （Gradle ≥ 9.4.1 + NDK + CMake），原因见 ci.yml 顶部注释。
+# 原来的 `./gradlew buildDebug -x lint` 是必失败写法（task 不存在 + 缺 NDK），已修正。
+
 on:
   pull_request:
     branches: [ "main" ]
@@ -21,10 +25,22 @@ jobs:
         with:
           java-version: "21"
           distribution: "temurin"
-          cache: gradle
 
-      - name: Grant execute permission for gradlew
-        run: chmod +x gradlew
+      - name: Set up Gradle 9.4.1
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.4.1'
 
-      - name: Build
-        run: ./gradlew buildDebug -x lint
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install required SDK packages
+        run: |
+          sdkmanager --install \
+            "platforms;android-37.0" \
+            "build-tools;37.0.0" \
+            "ndk;28.2.13676358" \
+            "cmake;3.22.1" > /dev/null
+
+      - name: Build debug APK
+        run: gradle --console=plain :app:assembleDebug

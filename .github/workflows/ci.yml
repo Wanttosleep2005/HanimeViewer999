@@ -2,6 +2,17 @@ permissions:
   contents: read
 name: CI
 
+# 每次推 main 时做一次编译验证（debug 变体，不需要签名配置）。
+#
+# ⚠️ 本工程有两个硬性前提，缺一个就必然构建失败：
+#   1) 用的是 AGP 9.2.1 → 要求 **Gradle ≥ 9.4.1**。不用工程自带的 ./gradlew：
+#      它的 wrapper 指向腾讯云镜像，CI 上没必要引入这个外部依赖。
+#   2) 含 NDK 原生库（app/src/main/cpp → libchino.so），abiFilters 写在 defaultConfig 里，
+#      **所有变体都会编译原生库**，所以必须装 NDK + CMake。
+#
+# 原来的 `./gradlew buildDebug -x lint` 两个前提都不满足，而且 buildDebug 这个 task
+# 在本工程根本不存在 → 每次都是必失败。已改为与 release.yml 一致的裸 gradle + assembleDebug。
+
 on:
   push:
     branches: [ "main" ]
@@ -21,10 +32,35 @@ jobs:
         with:
           java-version: "21"
           distribution: "temurin"
-          cache: gradle
 
-      - name: Grant execute permission for gradlew
-        run: chmod +x gradlew
+      - name: Set up Gradle 9.4.1
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.4.1'
 
-      - name: Build
-        run: ./gradlew buildDebug -x lint
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install required SDK packages
+        run: |
+          # compileSdk = 37  → platforms;android-37.0
+          # 原生库 libchino.so 走 CMake 3.22.1 + NDK 28.2.13676358
+          sdkmanager --install \
+            "platforms;android-37.0" \
+            "build-tools;37.0.0" \
+            "ndk;28.2.13676358" \
+            "cmake;3.22.1" > /dev/null
+          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
+          echo "ndk   : $(ls "$ANDROID_SDK_ROOT/ndk"   | tr '\n' ' ')"
+          echo "cmake : $(ls "$ANDROID_SDK_ROOT/cmake" | tr '\n' ' ')"
+
+      - name: Build debug APK
+        run: gradle --console=plain :app:assembleDebug
+
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-debug-${{ github.sha }}
+          path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 7
