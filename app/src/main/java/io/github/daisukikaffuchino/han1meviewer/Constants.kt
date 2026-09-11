@@ -92,3 +92,12 @@ const val UPDATE_NOTIFICATION_CHANNEL = "update_channel"
 
 const val FILE_PROVIDER_AUTHORITY = "${BuildConfig.APPLICATION_ID}.fileProvider"
 const val GETCHU_BASE_URL = "https://www.getchu.com/"
+
+// Search
+
+/**
+ * 站内搜索「分类」筛选里「里番」对应的 search_key（见 assets/search_options/genre.json）。
+ * 预告页的月度归档检索必须带上它，否则会把 3D动画 / MMD / Cosplay / AI生成 等
+ * 其它分类一起塞进「里番新番列表」。
+ */
+const val HANIME_GENRE_ANIME = "裏番"

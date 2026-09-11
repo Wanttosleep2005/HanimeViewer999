@@ -2,6 +2,7 @@ package io.github.daisukikaffuchino.han1meviewer.logic
 
 import io.github.daisukikaffuchino.utils.LogUtil
 import io.github.daisukikaffuchino.han1meviewer.EMPTY_STRING
+import io.github.daisukikaffuchino.han1meviewer.HANIME_GENRE_ANIME
 import io.github.daisukikaffuchino.han1meviewer.logic.SettingsRepository
 import io.github.daisukikaffuchino.han1meviewer.logic.SettingsRepository.isAlreadyLogin
 import io.github.daisukikaffuchino.han1meviewer.R
@@ -91,10 +92,15 @@ object NetworkRepo {
      * @param month 月份 (1-12)
      * @param page 页码，从 1 开始
      */
+    // 【月度归档】站方预告停更月份改用「按上市月份检索」。
+    // 注意必须带上 genre = "裏番"（genre.json 里「里番」的 search_key）：
+    // 不带 genre 的搜索结果会混进 3D动画 / MMD / Cosplay / AI生成 等其它分类，
+    // 而这个页面的标题就是「某月 里番新番列表」，只应记录里番。
     fun getHanimeArchiveByMonth(year: Int, month: Int, page: Int) = pageIOFlow(
         request = {
             HanimeNetwork.hanimeService.getHanimeSearchResult(
                 page = page,
+                genre = HANIME_GENRE_ANIME,
                 sort = "最新上市",
                 date = "$year 年 $month 月",
             )

@@ -172,16 +172,16 @@ fun PreviewContent(
                 contentPadding = PaddingValues(bottom = 24.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
-                // 「站方预告已停更 / 去看 Getchu 预告」这张卡只在真正的预告模式出现。
-                // 归档模式列的是已经上映的番剧，与"预告停更"无关，所以不再展示。
-                if (archiveState == null) {
-                    item {
-                        PreviewSourceNoticeCard(
-                            onOpenWeb = { onEvent(PreviewEvent.OnOpenWebPreview) },
-                            onOpenGetchu = { onEvent(PreviewEvent.OnOpenGetchuPreview) },
-                            modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp),
-                        )
-                    }
+                // 「站方预告已停更 / 去看 Getchu 预告」提示卡常驻。
+                // 站方自 2026-05 起停更新番预告，这张卡是进入 Getchu 预告页的唯一入口，
+                // 无论当前月走的是站方预告模式还是「按上市月份检索」的归档模式都必须能看到，
+                // 因此这里不再按 archiveState 做条件判断。
+                item {
+                    PreviewSourceNoticeCard(
+                        onOpenWeb = { onEvent(PreviewEvent.OnOpenWebPreview) },
+                        onOpenGetchu = { onEvent(PreviewEvent.OnOpenGetchuPreview) },
+                        modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp),
+                    )
                 }
 
                 item {
