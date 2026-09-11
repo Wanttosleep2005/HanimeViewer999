@@ -4,7 +4,7 @@ import okhttp3.Dns
 import java.net.InetAddress
 
 /**
- * GitHub 域名的**内置 IP 解析**，专供「检查更新 / 下载更新包」这两条链路使用。
+ * 更新链路（GitHub + jsDelivr）域名的**内置 IP 解析**，专供「检查更新 / 下载更新包」使用。
  *
  * ## 为什么需要它
  *
@@ -60,6 +60,10 @@ object GitHubDns : Dns {
         "release-assets.githubusercontent.com" to githubusercontentIps,
         "objects.githubusercontent.com" to githubusercontentIps,
         "raw.githubusercontent.com" to githubusercontentIps,
+        // jsDelivr 是「检查更新」的首选源（GitHub 内容加速）。它的解析同样可能被污染 ——
+        // 实测 2026-09-11 本机直连 `cdn.jsdelivr.net` 会 25 s 超时，走代理才 200。
+        // 兜底一组实测可用的 Cloudflare 地址，避免「检查更新」这条腿也瘸掉。
+        "cdn.jsdelivr.net" to listOf("104.17.208.5", "104.17.207.5"),
     )
 
     override fun lookup(hostname: String): List<InetAddress> {
