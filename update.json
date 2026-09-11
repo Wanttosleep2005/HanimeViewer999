@@ -1,8 +1,8 @@
 {
-  "versionName": "26.3.2-mod.3",
-  "versionCode": 260912,
-  "downloadUrl": "https://github.com/Wanttosleep2005/HanimeViewer/releases/download/v26.3.2-mod.3/Han1meViewer-v26.3.2-mod.3.apk",
-  "updateDescription": "1. 预告页「某月 里番新番列表」只保留里番：月度归档检索补上 genre=裏番，不再把 3D动画 / MMD / Cosplay / AI生成 等其它分类一起列出来\n2. 恢复「站方自 2026-05 起停更 / 查看网页版 / 查看 Getchu 预告」提示卡：站方预告模式与月度归档模式都常驻显示，Getchu 预告重新可进",
+  "versionName": "26.3.2-mod.4",
+  "versionCode": 260913,
+  "downloadUrl": "https://github.com/ddsmie4t2g/HanimeViewer/releases/download/v26.3.2-mod.4/Han1meViewer-v26.3.2-mod.4.apk",
+  "updateDescription": "1. 检查更新后可直接在应用内下载并安装，不再跳转浏览器\n2. 下载时通知栏显示进度，下载完成后自动拉起系统安装器\n3. 未授予「安装未知应用」权限时，会引导到对应设置页授权",
   "forceUpdate": false,
   "isShowAnnouncement": false,
   "announcement": ""
