@@ -68,8 +68,8 @@ android {
         applicationId = "io.github.daisukikaffuchino.han1meviewer"
         minSdk = 29
         targetSdk = 37
-        versionCode = 260920
-        versionName = "26.3.2-mod.6.6"
+        versionCode = 260921
+        versionName = "26.3.2-mod.6.7"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -215,6 +215,7 @@ dependencies {
     implementation(libs.media3.exoplayer)
     implementation(libs.media3.exoplayer.hls)
     implementation(libs.media3.cast)
+    implementation(libs.media3.datasource.okhttp)
     implementation(libs.mpv.lib)
 
     ksp(libs.room.compiler)

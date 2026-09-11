@@ -580,6 +580,14 @@ fun VideoRouteHostScreen(
         updatePipAction()
     }
 
+    // 播放失败必须让用户看得见。
+    // 原先 `PlaybackEngineState.errorMessage` 一路透传到界面层后**没有任何地方读过它**，
+    // 于是失败的表现就是「进度条僵在 0:00 / 0、点什么都没反应、也不报错」——
+    // 这正是 nJAV 那个问题拖了好几轮才定位的原因。现在直接弹出来。
+    LaunchedEffect(playbackState.engine.errorMessage) {
+        playbackState.engine.errorMessage?.takeIf { it.isNotBlank() }?.let(SonnerToast::error)
+    }
+
     LaunchedEffect(isFullscreen) {
         backCallback.isEnabled = isFullscreen
     }

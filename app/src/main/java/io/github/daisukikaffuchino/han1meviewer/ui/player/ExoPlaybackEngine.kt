@@ -12,12 +12,13 @@ import androidx.media3.common.Player
 import androidx.media3.common.VideoSize
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultDataSource
-import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.datasource.okhttp.OkHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.hls.HlsMediaSource
 import androidx.media3.exoplayer.source.MediaSource
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
 import io.github.daisukikaffuchino.han1meviewer.USER_AGENT
+import io.github.daisukikaffuchino.han1meviewer.logic.njav.PlaybackHttpClient
 import io.github.daisukikaffuchino.utils.LogUtil
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -44,6 +45,17 @@ class ExoPlaybackEngine(
     private val mutableState = MutableStateFlow(PlaybackEngineState())
     private var progressJob: Job? = null
     private var released = false
+
+    /**
+     * 单独存一份错误信息。
+     *
+     * ⚠️ **不能让 [publishState] 直接写 `errorMessage = null`** ——
+     * 它每 250ms 跑一次，而 [onPlayerError] 只跑一次，
+     * 于是刚设上的错误会在 250ms 内被自己冲掉，
+     * 表现成「画面卡住 / 0:00:00 但**一个字提示都没有**」，非常难排查。
+     * 这里改成：错误值常驻，只有播放真正恢复到 READY 才清。
+     */
+    private var lastErrorMessage: String? = null
 
     override val state: StateFlow<PlaybackEngineState> = mutableState.asStateFlow()
 
@@ -142,11 +154,26 @@ class ExoPlaybackEngine(
     override fun onPlayerError(error: PlaybackException) {
         progressJob?.cancel()
         LogUtil.e(TAG, "Playback failed", error)
+        // ⚠️ 错误信息必须**带出底层 cause**，否则界面只会看到一个笼统的
+        // `PlaybackException`。真正有用的线索几乎全在 cause 上：
+        //   403 → HttpDataSource.InvalidResponseCodeException("Response code: 403")
+        //   域名解析 → UnknownHostException
+        //   证书 → SSLHandshakeException
+        // 这条链路出问题时，界面提示是唯一的诊断入口（用户没法接 adb 抓日志时尤其重要）。
+        val detail = buildString {
+            append(error.errorCodeName)
+            error.cause?.let { cause ->
+                append("：")
+                append(cause.javaClass.simpleName)
+                cause.message?.takeIf { it.isNotBlank() }?.let { append(" ").append(it) }
+            }
+        }
+        lastErrorMessage = detail
         mutableState.value = mutableState.value.copy(
             phase = PlaybackPhase.Error,
             isPlaying = false,
             isBuffering = false,
-            errorMessage = error.localizedMessage,
+            errorMessage = detail,
         )
     }
 
@@ -163,12 +190,18 @@ class ExoPlaybackEngine(
     private fun publishState(videoSize: VideoSize = player.videoSize) {
         if (released) return
         val duration = player.duration.takeUnless { it == C.TIME_UNSET }?.coerceAtLeast(0L) ?: 0L
+        // 只有播放真正恢复到 READY 才清错误；否则保留（理由见 lastErrorMessage 的注释）
+        if (player.playbackState == Player.STATE_READY) lastErrorMessage = null
         mutableState.value = mutableState.value.copy(
-            phase = when (player.playbackState) {
-                Player.STATE_BUFFERING -> PlaybackPhase.Preparing
-                Player.STATE_READY -> PlaybackPhase.Ready
-                Player.STATE_ENDED -> PlaybackPhase.Ended
-                else -> PlaybackPhase.Idle
+            phase = if (lastErrorMessage != null) {
+                PlaybackPhase.Error
+            } else {
+                when (player.playbackState) {
+                    Player.STATE_BUFFERING -> PlaybackPhase.Preparing
+                    Player.STATE_READY -> PlaybackPhase.Ready
+                    Player.STATE_ENDED -> PlaybackPhase.Ended
+                    else -> PlaybackPhase.Idle
+                }
             },
             isPlaying = player.isPlaying,
             isBuffering = player.isLoading || player.playbackState == Player.STATE_BUFFERING,
@@ -178,12 +211,16 @@ class ExoPlaybackEngine(
             playbackSpeed = player.playbackParameters.speed,
             videoWidth = (videoSize.width * videoSize.pixelWidthHeightRatio).toInt(),
             videoHeight = videoSize.height,
-            errorMessage = null,
+            errorMessage = lastErrorMessage,
         )
     }
 
     private fun createMediaSource(request: PlaybackRequest): MediaSource {
-        val httpFactory = DefaultHttpDataSource.Factory()
+        // ⚠️ 用 OkHttp 而不是 DefaultHttpDataSource：后者走 HttpURLConnection，
+        // 会绕开应用的 HDns 兜底与用户代理配置，导致「详情页能开、一播放就 0:00/0」。
+        // HLS 的主列表 / 子列表 / 每个分片都会经过这个 factory，
+        // 所以 Referer 之类的防盗链头也会自动带到分片请求上。
+        val httpFactory = OkHttpDataSource.Factory(PlaybackHttpClient.client)
             .setUserAgent(USER_AGENT)
             .setDefaultRequestProperties(request.headers)
         val dataSourceFactory = DefaultDataSource.Factory(appContext, httpFactory)

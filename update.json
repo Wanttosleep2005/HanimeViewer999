@@ -1,8 +1,8 @@
 {
-  "versionName": "26.3.2-mod.6.6",
-  "versionCode": 260920,
-  "downloadUrl": "https://github.com/ddsmie4t2g/HanimeViewer/releases/download/v26.3.2-mod.6.6/Han1meViewer-v26.3.2-mod.6.6.apk",
-  "updateDescription": "1. 修好「nJAV 点进影片必加载失败」的真凶：解包播放地址用的正则，开头有个没转义的 }。这条正则在电脑上跑完全正常，但手机上的正则引擎（ICU）直接判它语法错误 —— 而它写在类的静态初始化里，一炸就把整个类标记成永久不可用，之后每次点进去只剩一句「NjavPacker」的报错，看不出任何原因。现在已改为手机上也合法的写法。此前「列表正常、点进去就挂」正是这个原因（列表不走这条正则）。\n2. nJAV 的报错不再被通用文案盖掉：现在会明确告诉你是哪一步失败、哪个环节出错，方便定位。\n3. 顺带把全工程 49 条正则逐条用 ICU 引擎校验过一遍，没有别的同类隐患。",
+  "versionName": "26.3.2-mod.6.7",
+  "versionCode": 260921,
+  "downloadUrl": "https://github.com/ddsmie4t2g/HanimeViewer/releases/download/v26.3.2-mod.6.7/Han1meViewer-v26.3.2-mod.6.7.apk",
+  "updateDescription": "1. 修好「详情页能打开、但视频 0:00 / 0 播不了」：ExoPlayer 内核原先走的是系统自带网络，等于绕开了应用里的域名兜底、代理设置，也用了过短的 8 秒超时。现已改为走和应用同一套网络栈 —— 域名解析有兜底、用户配的代理生效、超时放宽到 20/30 秒，HLS 的分片请求也能复用连接。\n2. 播放链路再加一道保险：只要请求打到视频 CDN，就自动补上防盗链所需的 Referer，不再依赖播放器组件是否正确透传请求头。\n3. 播放失败时不再「静默卡住」：以前错误信息在传递过程中被周期刷新冲掉了，界面既不提示也不给重试按钮，看起来就是「点播放没反应」。现在会弹出具体错误（含底层原因，如 403 / 域名解析失败 / 证书问题），并正常显示重试按钮。",
   "forceUpdate": false,
   "isShowAnnouncement": false,
   "announcement": ""
