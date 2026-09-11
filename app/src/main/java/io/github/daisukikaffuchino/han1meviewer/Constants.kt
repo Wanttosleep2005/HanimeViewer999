@@ -4,6 +4,7 @@ import kotlinx.datetime.LocalDate
 import kotlinx.datetime.LocalDateTime
 import kotlinx.datetime.format.char
 import io.github.daisukikaffuchino.han1meviewer.logic.SettingsRepository
+import io.github.daisukikaffuchino.han1meviewer.logic.model.SiteSource
 
 /**
  * 我觉得空字符串写出来太逆天了，所以搞了个常量
@@ -60,6 +61,28 @@ object HanimeConstants {
     val HANIME_HOSTNAME = arrayOf("hanime1.me","hanime1.com","hanimeone.me","javchu.com")
     val HANIME_URL = arrayOf("https://hanime1.me/","https://hanime1.com/","https://hanimeone.me/","https://javchu.com/")
     val ANIME_URL = arrayOf("https://hanime1.me/","https://hanime1.com/","https://hanimeone.me/")
+
+    /**
+     * nJAV（njavtv.com）—— 独立数据源，只有这一个域名。
+     *
+     * 它**不属于** [HANIME_URL] / [ANIME_URL] 这两组 hanime 镜像：走的是另一套
+     * 网络层与解析器（[io.github.daisukikaffuchino.han1meviewer.logic.njav.NjavNetwork]）。
+     * 之所以在「域名」列表里也给它留一项，是为了让「数据源」与「域名」在 UI 上
+     * 始终指向同一个站点 —— 选了 nJAV 数据源，域名就必须是 njavtv.com，
+     * 否则抽屉头部会显示成 hanime 的地址。
+     */
+    const val NJAV_HOSTNAME = "njavtv.com"
+    const val NJAV_URL = "https://njavtv.com/"
+
+    /**
+     * 站点的显示名 → 数据源。
+     *
+     * njavtv.com 走独立数据源，其余（含 hanime 各镜像与 javchu）都归
+     * [io.github.daisukikaffuchino.han1meviewer.logic.model.SiteSource.Hanime1]。
+     */
+    fun siteSourceOf(url: String): SiteSource =
+        if (url.contains(NJAV_HOSTNAME, ignoreCase = true)) SiteSource.Njav
+        else SiteSource.Hanime1
 }
 
 val HANIME_LOGIN_URL: String

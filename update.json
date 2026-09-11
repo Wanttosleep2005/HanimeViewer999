@@ -1,8 +1,8 @@
 {
-  "versionName": "26.3.2-mod.5",
-  "versionCode": 260914,
-  "downloadUrl": "https://github.com/ddsmie4t2g/HanimeViewer/releases/download/v26.3.2-mod.5/Han1meViewer-v26.3.2-mod.5.apk",
-  "updateDescription": "1. 新增 nJAV（njavtv.com）数据源，可在「设置 → 数据源」中与 hanime1.me 之间切换\n2. nJAV 下支持首页分类、搜索、详情播放（自动注入防盗链 Referer，解决能解析出地址却播不了）\n3. 修复日历预告页翻到有数据的月份后，后续月份被灰掉锁死的问题",
+  "versionName": "26.3.2-mod.6.1",
+  "versionCode": 260915,
+  "downloadUrl": "https://github.com/ddsmie4t2g/HanimeViewer/releases/download/v26.3.2-mod.6.1/Han1meViewer-v26.3.2-mod.6.1.apk",
+  "updateDescription": "1. 修复日历/预告页「加载完毕，共 N 页」误报：hanime 按上市月份检索其实恒为单页，翻页请求返回的广告占位页被错记成新页；现在只有真正带回新条目才计入页数\n2. 修复「数据源」里 nJAV 选不生效：选中后现在会连同域名一起改掉并提示重启，重启后真正走 nJAV 网络层\n3. 「域名」列表新增 njavtv.com (nJAV)\n4. 首页抽屉「切换站点」改为三站循环：hanime 里番 → javchu(AV) → nJAV → 回到 hanime",
   "forceUpdate": false,
   "isShowAnnouncement": false,
   "announcement": ""

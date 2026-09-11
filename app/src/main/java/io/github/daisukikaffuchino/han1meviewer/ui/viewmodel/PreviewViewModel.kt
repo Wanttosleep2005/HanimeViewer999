@@ -136,14 +136,28 @@ class PreviewViewModel : ViewModel() {
                         } else {
                             (prev.items + pageItems).distinctBy(HanimeInfo::videoCode)
                         }
+                        // ⚠️ 站点的「按上市月份检索」恒定只有 1 页（2026-09 实测：任意月份
+                        // 分页控件都写着 `/ 1`），请求 page=2 时它会回一个**只含广告卡**的
+                        // 占位页。那个占位页里没有番号，解析出来就是空列表 —— 它是「没有下
+                        // 一页」，不是「第 2 页解析失败」。
+                        //
+                        // 旧实现只要 page 请求回来就把 loadedPages 记成 page，于是 page=2
+                        // 这个空占位页会把尾注刷成「加载完毕，共2页」，而列表里一个新条目都
+                        // 没有 —— 看起来就像内容被挤掉了。修法：只有**确实带回了新条目**才算
+                        // 多加载了一页，否则直接判定为到底了。
+                        val addedNew = page <= 1 || merged.size > prev.items.size
                         archiveLoadedPage = page
                         _archiveFlow.value = prev.copy(
                             items = merged,
                             isLoading = false,
                             isLoadingMore = false,
                             hasError = false,
-                            noMoreData = pageItems.isEmpty(),
-                            loadedPages = page,
+                            noMoreData = if (page <= 1) pageItems.isEmpty() else !addedNew,
+                            loadedPages = when {
+                                page <= 1 -> if (pageItems.isEmpty()) 0 else 1
+                                addedNew -> prev.loadedPages + 1
+                                else -> prev.loadedPages
+                            },
                         )
                     }
 
@@ -154,7 +168,9 @@ class PreviewViewModel : ViewModel() {
                             isLoadingMore = false,
                             hasError = false,
                             noMoreData = true,
-                            loadedPages = page,
+                            // 第 1 页就 NoMoreData 时算 0 页；后续页本来就存在，保留已有页数，
+                            // 不能跟着写成 page（否则又是「共2页」）。
+                            loadedPages = if (page <= 1) 0 else prev.loadedPages,
                         )
                     }
 

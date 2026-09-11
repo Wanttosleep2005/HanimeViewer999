@@ -126,7 +126,7 @@ fun NetworkSettingsScreen(
             selectedValue = siteSource,
             options = listOf(
                 SiteSource.Hanime1.value to stringResource(R.string.site_source_hanime),
-                SiteSource.Njav.value to stringResource(R.string.site_source_njav),
+                SiteSource.Njav.value to stringResource(R.string.site_source_njav_with_host),
             ),
             onDismiss = { showSiteSourceDialog = false },
             onSelect = {
@@ -229,7 +229,7 @@ fun NetworkSettingsScreen(
                 SettingNavigationItem(
                     title = stringResource(R.string.site_source_title),
                     summary = when (SiteSource.fromValue(siteSource)) {
-                        SiteSource.Njav -> stringResource(R.string.site_source_njav)
+                        SiteSource.Njav -> stringResource(R.string.site_source_njav_with_host)
                         SiteSource.Hanime1 -> stringResource(R.string.site_source_hanime)
                     },
                     iconRes = R.drawable.ic_domain,

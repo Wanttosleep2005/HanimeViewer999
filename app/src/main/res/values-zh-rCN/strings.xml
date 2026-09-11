@@ -163,6 +163,8 @@
     <string name="site_source_summary">切换内容来源。账号相关功能（登录 / 清单 / 评论）目前仅在 hanime1.me 下可用。</string>
     <string name="site_source_hanime">hanime1.me</string>
     <string name="site_source_njav">nJAV</string>
+    <string name="site_source_njav_with_host">nJAV（njavtv.com）</string>
+    <string name="site_source_restart_confirm">切换数据源需要重启应用，确定继续吗？</string>
     <string name="custom_mirror_site">自定义镜像站</string>
     <string name="enable_custom_mirror_site">启用自定义镜像站</string>
     <string name="custom_mirror_site_hint">请输入一个与主站结构相同、直达主页的自定义镜像站，格式为https://www.example.com、https://www.example.com/enter 或 https://www.example.com/enter/；主页会按输入原样请求</string>

@@ -21,6 +21,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.core.net.toUri
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.daisukikaffuchino.han1meviewer.EMPTY_STRING
+import io.github.daisukikaffuchino.han1meviewer.HanimeConstants
 import io.github.daisukikaffuchino.han1meviewer.logic.SettingsRepository
 import io.github.daisukikaffuchino.han1meviewer.logic.model.SiteSource
 import io.github.daisukikaffuchino.han1meviewer.R
@@ -68,6 +69,9 @@ fun NetworkSettingsRouteScreen(embedded: Boolean = false) {
     var showDohConflictConfirm by remember { mutableStateOf(false) }
     var showSocksWarning by remember { mutableStateOf(false) }
     var pendingDomainValue by remember { mutableStateOf("") }
+    var pendingSiteSource by remember { mutableStateOf<SiteSource?>(null) }
+    /** true 表示这次确认框是「切换数据源」触发的，用它决定提示文案。 */
+    var pendingSiteSourceSwitch by remember { mutableStateOf(false) }
     var pendingUseCustomMirrorSite by remember { mutableStateOf(SettingsRepository.useCustomMirrorSite) }
     var pendingCustomMirrorSite by remember { mutableStateOf(SettingsRepository.customMirrorSite) }
     var pendingAppendCustomMirrorPath by remember { mutableStateOf(SettingsRepository.appendCustomMirrorPath) }
@@ -196,21 +200,38 @@ fun NetworkSettingsRouteScreen(embedded: Boolean = false) {
             val origin = SettingsRepository.baseUrl
             if (newValue != origin) {
                 pendingDomainValue = newValue
+                // 域名和数据源必须一起改：选到 njavtv.com 就得把数据源切成 nJAV，
+                // 选回任意 hanime 镜像则切回 hanime1 —— 否则会出现
+                // 「数据源写着 nJAV，域名却还是 hanime1.me」这种自相矛盾的状态。
+                pendingSiteSource = HanimeConstants.siteSourceOf(newValue)
+                pendingSiteSourceSwitch = false
                 pendingUseCustomMirrorSite = false
                 pendingCustomMirrorSite = SettingsRepository.customMirrorSite
                 pendingAppendCustomMirrorPath = SettingsRepository.appendCustomMirrorPath
                 showDomainRestartConfirm = true
             }
         },
-        siteSource = SettingsRepository.siteSource.value,
+        siteSource = settings.siteSource.value,
         onSiteSourceChange = { newValue ->
             val source = SiteSource.fromValue(newValue)
-            if (source != SettingsRepository.siteSource) {
-                coroutineScope.launch {
-                    SettingsRepository.update { it.copy(siteSource = source) }
-                    // 换了数据源就要重建网络层，否则首页还挂在旧站点的域名上。
-                    HanimeNetwork.rebuildNetwork()
+            if (source != settings.siteSource) {
+                // ⚠️ 光写 siteSource 是不够的：首页 / 搜索页的 ViewModel 早就把旧站点的
+                // 数据缓存住了，用户切完看不到任何变化，会以为「这一项点不动」。
+                // 所以和数据源配套把域名一起改掉，然后走统一的「重启应用」流程，
+                // 保证切换结果肉眼可见。
+                pendingSiteSource = source
+                pendingSiteSourceSwitch = true
+                pendingDomainValue = if (source.isNjav) {
+                    HanimeConstants.NJAV_URL
+                } else {
+                    SettingsRepository.selectedBaseUrl
+                        .takeIf { it.isNotBlank() && it in HanimeConstants.HANIME_URL }
+                        ?: HanimeConstants.HANIME_URL[0]
                 }
+                pendingUseCustomMirrorSite = false
+                pendingCustomMirrorSite = SettingsRepository.customMirrorSite
+                pendingAppendCustomMirrorPath = SettingsRepository.appendCustomMirrorPath
+                showDomainRestartConfirm = true
             }
         },
         onSaveCustomMirrorSite = { enabled, url, appendPath ->
@@ -338,7 +359,12 @@ fun NetworkSettingsRouteScreen(embedded: Boolean = false) {
     ConfirmDialog(
         visible = showDomainRestartConfirm,
         title = stringResource(R.string.attention),
-        message = stringResource(R.string.domain_change_tips).trimIndent(),
+        // 数据源切换与域名切换共用同一个「重启」确认框，只是文案不同。
+        message = if (pendingSiteSourceSwitch) {
+            stringResource(R.string.site_source_restart_confirm)
+        } else {
+            stringResource(R.string.domain_change_tips).trimIndent()
+        },
         confirmText = stringResource(R.string.confirm),
         dismissText = stringResource(R.string.cancel),
         cancelable = false,
@@ -348,6 +374,9 @@ fun NetworkSettingsRouteScreen(embedded: Boolean = false) {
                     it.copy(
                         domainName = pendingDomainValue.ifEmpty { it.domainName },
                         selectedBaseUrl = pendingDomainValue.ifEmpty { it.selectedBaseUrl },
+                        // 数据源必须在这里落库，否则「数据源」那一项点完重启回来还是旧值，
+                        // 用户会以为它点不动 —— 这正是 mod.5 里 nJAV 不可选的根因之一。
+                        siteSource = pendingSiteSource ?: it.siteSource,
                         useCustomMirrorSite = pendingUseCustomMirrorSite,
                         customMirrorSite = pendingCustomMirrorSite,
                         appendCustomMirrorPath = pendingAppendCustomMirrorPath,
@@ -359,6 +388,8 @@ fun NetworkSettingsRouteScreen(embedded: Boolean = false) {
         },
         onDismiss = {
             pendingDomainValue = ""
+            pendingSiteSource = null
+            pendingSiteSourceSwitch = false
             pendingUseCustomMirrorSite = SettingsRepository.useCustomMirrorSite
             pendingCustomMirrorSite = SettingsRepository.customMirrorSite
             pendingAppendCustomMirrorPath = SettingsRepository.appendCustomMirrorPath

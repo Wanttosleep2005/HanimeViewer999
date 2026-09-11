@@ -14,6 +14,7 @@ import androidx.annotation.IntRange
 import androidx.annotation.RequiresApi
 import androidx.core.net.toUri
 import androidx.core.text.parseAsHtml
+import io.github.daisukikaffuchino.han1meviewer.HanimeConstants
 import io.github.daisukikaffuchino.han1meviewer.HanimeConstants.HANIME_HOSTNAME
 import io.github.daisukikaffuchino.han1meviewer.HanimeConstants.HANIME_URL
 import io.github.daisukikaffuchino.han1meviewer.R
@@ -27,6 +28,9 @@ internal fun buildDomainOptions(context: Context): List<Pair<String, String>> = 
     "${HANIME_HOSTNAME[1]} (${context.getString(R.string.alternative)})" to HANIME_URL[1],
     "${HANIME_HOSTNAME[2]} (${context.getString(R.string.alternative)})" to HANIME_URL[2],
     "${HANIME_HOSTNAME[3]} (av)" to HANIME_URL[3],
+    // nJAV 是独立数据源，但它也得在这一栏里能被选中 / 被展示出来，
+    // 否则切到 nJAV 之后「域名」这一行显示的还是 hanime 的地址。
+    "${HanimeConstants.NJAV_HOSTNAME} (nJAV)" to HanimeConstants.NJAV_URL,
 )
 
 internal fun generateClearCacheSummary(context: Context, size: Long): CharSequence {

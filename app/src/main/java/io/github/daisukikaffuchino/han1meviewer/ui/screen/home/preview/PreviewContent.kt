@@ -281,7 +281,9 @@ fun PreviewContent(
                             item {
                                 LoadMoreFooter(
                                     state = archiveState.toFooterState(),
-                                    loadedPage = archiveState.loadedPages,
+                                    // 只有真的翻过页才报页数；单页时显示「加载完毕！」就好，
+                                    // 免得每次都在底下一本正经地写「共1页」。
+                                    loadedPage = archiveState.loadedPages.takeIf { it > 1 },
                                     isLoadingMore = archiveState.isLoadingMore,
                                     modifier = Modifier.fillMaxWidth(),
                                 )
