@@ -35,6 +35,7 @@ import io.github.daisukikaffuchino.han1meviewer.R
 import io.github.daisukikaffuchino.han1meviewer.logic.network.DohConfig
 import io.github.daisukikaffuchino.han1meviewer.logic.network.HProxySelector
 import io.github.daisukikaffuchino.han1meviewer.ui.component.ChoiceDialog
+import io.github.daisukikaffuchino.han1meviewer.logic.model.SiteSource
 import io.github.daisukikaffuchino.han1meviewer.ui.component.SettingNavigationItem
 import io.github.daisukikaffuchino.han1meviewer.ui.component.SettingSwitchItem
 import io.github.daisukikaffuchino.han1meviewer.ui.component.SettingsSectionTitle
@@ -97,6 +98,8 @@ fun NetworkSettingsScreen(
     customMirrorTestResult: String?,
     isCustomMirrorTesting: Boolean,
     onDomainChange: (String) -> Unit,
+    siteSource: String,
+    onSiteSourceChange: (String) -> Unit,
     onSaveCustomMirrorSite: (Boolean, String, Boolean) -> Unit,
     onTestCustomMirrorSite: (String, Boolean) -> Unit,
     onUseBuiltInHostsChange: (Boolean) -> Unit,
@@ -115,6 +118,23 @@ fun NetworkSettingsScreen(
     var showDohDialog by rememberSaveable { mutableStateOf(false) }
     var showCustomHostsDialog by rememberSaveable { mutableStateOf(false) }
     var showCustomMirrorSiteDialog by rememberSaveable { mutableStateOf(false) }
+    var showSiteSourceDialog by rememberSaveable { mutableStateOf(false) }
+
+    if (showSiteSourceDialog) {
+        NetworkChoiceDialog(
+            title = stringResource(R.string.site_source_title),
+            selectedValue = siteSource,
+            options = listOf(
+                SiteSource.Hanime1.value to stringResource(R.string.site_source_hanime),
+                SiteSource.Njav.value to stringResource(R.string.site_source_njav),
+            ),
+            onDismiss = { showSiteSourceDialog = false },
+            onSelect = {
+                showSiteSourceDialog = false
+                onSiteSourceChange(it)
+            },
+        )
+    }
 
     if (showDomainDialog) {
         NetworkChoiceDialog(
@@ -206,6 +226,15 @@ fun NetworkSettingsScreen(
                 SettingsSectionTitle(titleRes = R.string.network)
             }
             SettingsSegmentedGroup {
+                SettingNavigationItem(
+                    title = stringResource(R.string.site_source_title),
+                    summary = when (SiteSource.fromValue(siteSource)) {
+                        SiteSource.Njav -> stringResource(R.string.site_source_njav)
+                        SiteSource.Hanime1 -> stringResource(R.string.site_source_hanime)
+                    },
+                    iconRes = R.drawable.ic_domain,
+                    onClick = { showSiteSourceDialog = true },
+                )
                 SettingNavigationItem(
                     title = stringResource(R.string.domain_name),
                     valueText = state.domainDisplay,
@@ -804,6 +833,8 @@ private fun NetworkSettingsScreenPreview() {
             dohBootstrapIps = "1.1.1.1, 8.8.8.8",
             dohTimeoutSeconds = 10,
             onDomainChange = {},
+            siteSource = SiteSource.Hanime1.value,
+            onSiteSourceChange = {},
             onSaveCustomMirrorSite = { _, _, _ -> },
             onTestCustomMirrorSite = { _, _ -> },
             onUseBuiltInHostsChange = {},

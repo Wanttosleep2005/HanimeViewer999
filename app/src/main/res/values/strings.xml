@@ -159,6 +159,10 @@
     <string name="start_all">Start All</string>
     <string name="pause_all">Pause All</string>
     <string name="domain_name">Domain Name</string>
+    <string name="site_source_title">Data Source</string>
+    <string name="site_source_summary">Switch the content source. Account features (login / lists / comments) only work on hanime1.me.</string>
+    <string name="site_source_hanime">hanime1.me</string>
+    <string name="site_source_njav">nJAV</string>
     <string name="custom_mirror_site">Custom Mirror Site</string>
     <string name="enable_custom_mirror_site">Enable custom mirror site</string>
     <string name="custom_mirror_site_hint">Enter a custom mirror site with the same structure as the main site and direct access to the homepage, formatted as https://www.example.com, https://www.example.com/enter, or https://www.example.com/enter/. The homepage is requested exactly as entered</string>

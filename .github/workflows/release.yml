@@ -166,7 +166,7 @@ jobs:
           TAG: ${{ steps.ver.outputs.tag }}
         run: |
           {
-            echo "第三方 Hanime1 客户端 · mod 线（数据源 hanime1.me）"
+            echo "第三方 Hanime1 客户端 · mod 线（数据源 hanime1.me / nJAV）"
             echo
             echo "- 产物：arm64-v8a 单 ABI APK"
             echo "- 版本：$TAG"

@@ -58,6 +58,7 @@ import io.github.daisukikaffuchino.han1meviewer.logic.exception.ParseException
 import io.github.daisukikaffuchino.han1meviewer.logic.model.HanimeVideo
 import io.github.daisukikaffuchino.han1meviewer.logic.model.SearchOption
 import io.github.daisukikaffuchino.han1meviewer.logic.model.VideoLandscapeLayoutStyle
+import io.github.daisukikaffuchino.han1meviewer.logic.njav.NjavNetwork
 import io.github.daisukikaffuchino.han1meviewer.logic.state.VideoLoadingState
 import io.github.daisukikaffuchino.han1meviewer.logic.state.WebsiteState
 import io.github.daisukikaffuchino.han1meviewer.ui.activity.MainActivity
@@ -471,6 +472,8 @@ fun VideoRouteHostScreen(
                             PlaybackQuality(
                                 label = label,
                                 uri = link.link,
+                                // surrit.com 有防盗链，必须把 Referer 透传给 HLS 的分片请求。
+                                headers = NjavNetwork.playbackHeadersFor(link.link),
                                 mimeType = link.subtype?.let { "video/$it" },
                             )
                         }
@@ -675,7 +678,12 @@ fun VideoRouteHostScreen(
             video?.let { info ->
                 val qualities =
                     info.videoUrls.map { (label, link) ->
-                        PlaybackQuality(label, link.link, mimeType = link.subtype?.let { "video/$it" })
+                        PlaybackQuality(
+                            label,
+                            link.link,
+                            headers = NjavNetwork.playbackHeadersFor(link.link),
+                            mimeType = link.subtype?.let { "video/$it" },
+                        )
                     }
                 playbackController.load(
                     title = info.title,

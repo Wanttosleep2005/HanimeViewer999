@@ -8,6 +8,7 @@ import io.github.daisukikaffuchino.han1meviewer.logic.model.DisplayDensity
 import io.github.daisukikaffuchino.han1meviewer.logic.model.PaletteStyle
 import io.github.daisukikaffuchino.han1meviewer.logic.model.PlayerKernel
 import io.github.daisukikaffuchino.han1meviewer.logic.model.SettingsStore
+import io.github.daisukikaffuchino.han1meviewer.logic.model.SiteSource
 import io.github.daisukikaffuchino.han1meviewer.logic.model.ThemeAccent
 import io.github.daisukikaffuchino.han1meviewer.logic.model.ThemeMode
 import io.github.daisukikaffuchino.han1meviewer.logic.model.VideoLandscapeLayoutStyle
@@ -64,6 +65,10 @@ object SettingsRepository : SettingsStore {
     }
     val homeUrl get() = if (current.useCustomMirrorSite && current.customMirrorSite.isNotBlank()) current.customMirrorSite else baseUrl
     val useCustomMirrorSite get() = current.useCustomMirrorSite
+    /** 当前数据源（hanime1.me / nJAV）。 */
+    val siteSource: SiteSource get() = current.siteSource
+    /** 便捷判断：当前是否走 nJAV 数据源。 */
+    val isNjavSite get() = current.siteSource.isNjav
     val customMirrorSite get() = current.customMirrorSite
     val appendCustomMirrorPath get() = current.appendCustomMirrorPath
     val selectedBaseUrl get() = current.selectedBaseUrl

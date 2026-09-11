@@ -159,6 +159,10 @@
     <string name="start_all">全部開始</string>
     <string name="pause_all">全部暫停</string>
     <string name="domain_name">網域名稱</string>
+    <string name="site_source_title">資料來源</string>
+    <string name="site_source_summary">切換內容來源。帳號相關功能（登入 / 清單 / 留言）目前僅在 hanime1.me 下可用。</string>
+    <string name="site_source_hanime">hanime1.me</string>
+    <string name="site_source_njav">nJAV</string>
     <string name="custom_mirror_site">自訂鏡像站</string>
     <string name="enable_custom_mirror_site">啟用自訂鏡像站</string>
     <string name="custom_mirror_site_hint">請輸入一個與主站結構相同、可直接進入首頁的自訂鏡像站，格式為 https://www.example.com、https://www.example.com/enter 或 https://www.example.com/enter/；首頁會依照輸入內容原樣請求</string>

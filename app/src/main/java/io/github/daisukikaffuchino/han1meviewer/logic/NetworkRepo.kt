@@ -11,11 +11,17 @@ import io.github.daisukikaffuchino.han1meviewer.logic.exception.HanimeNotFoundEx
 import io.github.daisukikaffuchino.han1meviewer.logic.exception.IPBlockedException
 import io.github.daisukikaffuchino.han1meviewer.logic.exception.ParseException
 import io.github.daisukikaffuchino.han1meviewer.logic.model.CommentPlace
+import io.github.daisukikaffuchino.han1meviewer.logic.model.HanimeInfo
+import io.github.daisukikaffuchino.han1meviewer.logic.model.HanimePreview
+import io.github.daisukikaffuchino.han1meviewer.logic.model.HanimeVideo
+import io.github.daisukikaffuchino.han1meviewer.logic.model.HomePage
 import io.github.daisukikaffuchino.han1meviewer.logic.model.ModifiedPlaylistArgs
 import io.github.daisukikaffuchino.han1meviewer.logic.model.MyListType
 import io.github.daisukikaffuchino.han1meviewer.logic.model.OnlineWatchHistorySort
 import io.github.daisukikaffuchino.han1meviewer.logic.model.VideoCommentArgs
 import io.github.daisukikaffuchino.han1meviewer.logic.model.VideoComments
+import io.github.daisukikaffuchino.han1meviewer.logic.njav.NjavNetwork
+import io.github.daisukikaffuchino.han1meviewer.logic.njav.NjavParser
 import io.github.daisukikaffuchino.han1meviewer.logic.network.HanimeNetwork
 import io.github.daisukikaffuchino.han1meviewer.logic.state.PageLoadingState
 import io.github.daisukikaffuchino.han1meviewer.logic.state.VideoLoadingState
@@ -23,8 +29,13 @@ import io.github.daisukikaffuchino.han1meviewer.logic.state.WebsiteState
 import io.github.daisukikaffuchino.utils.applicationContext
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.flowOn
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.MultipartBody
@@ -45,35 +56,53 @@ object NetworkRepo {
 
     //<editor-fold desc="Hanime">
 
-    fun getHomePage() = websiteIOFlow(
-        request = { HanimeNetwork.hanimeService.getHomePage(SettingsRepository.homeUrl) },
-        action = Parser::homePageVer2
-    )
+    fun getHomePage(): Flow<WebsiteState<HomePage>> =
+        if (SettingsRepository.isNjavSite) njavHomePageFlow()
+        else websiteIOFlow(
+            request = { HanimeNetwork.hanimeService.getHomePage(SettingsRepository.homeUrl) },
+            action = Parser::homePageVer2
+        )
 
     fun getHanimeSearchResult(
         page: Int, query: String?, genre: String?,
         sort: String?, broad: Boolean, date: String?,
         duration: String?, tags: Set<String>, brands: Set<String>,
-    ) = pageIOFlow(
-        request = {
-            HanimeNetwork.hanimeService.getHanimeSearchResult(
-                page, query, genre, sort,
-                if (broad) "on" else null,
-                date, duration, tags, brands
+    ): Flow<PageLoadingState<MutableList<HanimeInfo>>> =
+        if (SettingsRepository.isNjavSite) {
+            njavListFlow(
+                page = page,
+                url = resolveNjavListUrl(page, query, genre, sort, tags),
             )
-        },
-        action = Parser::hanimeSearch
-    )
+        } else {
+            pageIOFlow(
+                request = {
+                    HanimeNetwork.hanimeService.getHanimeSearchResult(
+                        page, query, genre, sort,
+                        if (broad) "on" else null,
+                        date, duration, tags, brands
+                    )
+                },
+                action = Parser::hanimeSearch
+            )
+        }
 
-    fun getHanimeVideo(videoCode: String) = videoIOFlow(
-        request = { HanimeNetwork.hanimeService.getHanimeVideo(videoCode) },
-        action = Parser::hanimeVideoVer2
-    )
+    fun getHanimeVideo(videoCode: String): Flow<VideoLoadingState<HanimeVideo>> =
+        if (SettingsRepository.isNjavSite) njavVideoFlow(videoCode)
+        else videoIOFlow(
+            request = { HanimeNetwork.hanimeService.getHanimeVideo(videoCode) },
+            action = Parser::hanimeVideoVer2
+        )
 
-    fun getHanimePreview(date: String) = websiteIOFlow(
-        request = { HanimeNetwork.hanimeService.getHanimePreview(date) },
-        action = Parser::hanimePreview
-    )
+    fun getHanimePreview(date: String): Flow<WebsiteState<HanimePreview>> =
+        if (SettingsRepository.isNjavSite) {
+            // nJAV 没有「新番预告」这种月历页，日历里返回空态而不是报错。
+            flowOf(NjavParser.emptyPreview())
+        } else {
+            websiteIOFlow(
+                request = { HanimeNetwork.hanimeService.getHanimePreview(date) },
+                action = Parser::hanimePreview
+            )
+        }
 
     /**
      * 【月度归档】按「上市月份」检索该月全部上市的番剧。
@@ -96,17 +125,27 @@ object NetworkRepo {
     // 注意必须带上 genre = "裏番"（genre.json 里「里番」的 search_key）：
     // 不带 genre 的搜索结果会混进 3D动画 / MMD / Cosplay / AI生成 等其它分类，
     // 而这个页面的标题就是「某月 里番新番列表」，只应记录里番。
-    fun getHanimeArchiveByMonth(year: Int, month: Int, page: Int) = pageIOFlow(
-        request = {
-            HanimeNetwork.hanimeService.getHanimeSearchResult(
-                page = page,
-                genre = HANIME_GENRE_ANIME,
-                sort = "最新上市",
-                date = "$year 年 $month 月",
+    fun getHanimeArchiveByMonth(
+        year: Int,
+        month: Int,
+        page: Int,
+    ): Flow<PageLoadingState<MutableList<HanimeInfo>>> =
+        if (SettingsRepository.isNjavSite) {
+            // nJAV 没有「按上市月份」归档接口，日历在该数据源下只展示空态。
+            flowOf<PageLoadingState<MutableList<HanimeInfo>>>(PageLoadingState.NoMoreData)
+        } else {
+            pageIOFlow(
+                request = {
+                    HanimeNetwork.hanimeService.getHanimeSearchResult(
+                        page = page,
+                        genre = HANIME_GENRE_ANIME,
+                        sort = "最新上市",
+                        date = "$year 年 $month 月",
+                    )
+                },
+                action = Parser::hanimeSearch
             )
-        },
-        action = Parser::hanimeSearch
-    )
+        }
 
     //获取订阅或者可以说是关注列表及它们的更新
     fun getMySubscriptions(page: Int) = websiteIOFlow(
@@ -553,6 +592,92 @@ object NetworkRepo {
     }.catch { e ->
         emit(WebsiteState.Error(handleException(e)))
     }.flowOn(Dispatchers.IO)
+
+    //<editor-fold desc="nJAV (njavtv.com) 数据源">
+
+    /**
+     * nJAV 首页：并行抓取若干分类页，再拼成一个 [HomePage]。
+     *
+     * 不复用 [websiteIOFlow] 是因为它不是「一个请求 → 一个页面」，而是 7 个分类页
+     * 合起来才凑成首页。单个分类失败不影响整体（`runCatching` 兜成空列表），
+     * 免得一个栏目 502 就让整个首页报错。
+     */
+    private fun njavHomePageFlow(): Flow<WebsiteState<HomePage>> = flow {
+        val sections = coroutineScope {
+            NjavParser.HOME_SECTIONS.map { (key, path) ->
+                async(Dispatchers.IO) {
+                    key to runCatching {
+                        val response = NjavNetwork.service.get(NjavNetwork.listUrl(path))
+                        if (response.isSuccessful) {
+                            NjavParser.videoList(response.body()?.string().orEmpty())
+                        } else {
+                            throw ParseException("nJAV: HTTP ${response.code()} - $path")
+                        }
+                    }.getOrDefault(mutableListOf<HanimeInfo>())
+                }
+            }.awaitAll().toMap()
+        }
+        emit(NjavParser.homePage(sections))
+    }.catch { e ->
+        emit(WebsiteState.Error(handleException(e)))
+    }.flowOn(Dispatchers.IO)
+
+    /** nJAV 列表页（分类 / 搜索）通用管线。 */
+    private fun njavListFlow(
+        page: Int,
+        url: String,
+    ): Flow<PageLoadingState<MutableList<HanimeInfo>>> = flow {
+        val response = NjavNetwork.service.get(url)
+        if (!response.isSuccessful) {
+            throw ParseException("nJAV: HTTP ${response.code()} - $url")
+        }
+        val body = response.body()?.string().orEmpty()
+        val list = NjavParser.videoList(body)
+        emit(
+            if (list.isEmpty() && !NjavParser.hasNextPage(body)) {
+                PageLoadingState.NoMoreData
+            } else {
+                PageLoadingState.Success(list)
+            }
+        )
+    }.catch { e ->
+        emit(PageLoadingState.Error(handleException(e)))
+    }.flowOn(Dispatchers.IO)
+
+    private fun njavVideoFlow(videoCode: String): Flow<VideoLoadingState<HanimeVideo>> = flow {
+        val response = NjavNetwork.service.get(NjavNetwork.detailUrl(videoCode))
+        if (!response.isSuccessful) {
+            throw ParseException("nJAV: HTTP ${response.code()} - $videoCode")
+        }
+        emit(NjavParser.video(response.body()?.string().orEmpty()))
+    }.catch { e ->
+        emit(VideoLoadingState.Error(handleException(e)))
+    }.flowOn(Dispatchers.IO)
+
+    /**
+     * 把 hanime 风格的检索条件翻译成 nJAV 的列表 URL。
+     *
+     * - 有关键词 → 搜索页 `/{locale}/search/{kw}`
+     * - 否则按首页分类点击时带下来的「检索标记」（genre / tags / sort）映射到对应分类页
+     * - 都没有 → 兜底到「最新」
+     */
+    private fun resolveNjavListUrl(
+        page: Int,
+        query: String?,
+        genre: String?,
+        sort: String?,
+        tags: Set<String>,
+    ): String {
+        val keyword = query?.trim().orEmpty()
+        if (keyword.isNotEmpty()) return NjavNetwork.searchUrl(keyword, page)
+
+        val path = sequenceOf(genre).plus(tags.asSequence()).plus(sequenceOf(sort))
+            .firstNotNullOfOrNull { NjavParser.pathForMarker(it) }
+
+        return NjavNetwork.listUrl(path ?: "new", page)
+    }
+
+    //</editor-fold>
 
     /**
      * 用于单网页的情况

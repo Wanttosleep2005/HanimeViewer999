@@ -87,6 +87,27 @@ enum class VideoLandscapeLayoutStyle(val value: String) {
     }
 }
 
+/**
+ * 数据源：决定首页 / 搜索 / 播放页的数据从哪个站点来。
+ *
+ * - [Hanime1]：hanime1.me 及其镜像（里番），默认值，行为与旧版完全一致。
+ * - [Njav]：nJAV（njavtv.com，日本 AV）。与 hanime 共用同一套 UI 与模型，
+ *   只是在仓库层分流；账号相关功能（登录 / 我的清单 / 评论）仍然只支持 [Hanime1]。
+ */
+enum class SiteSource(val value: String) {
+    Hanime1("hanime1"),
+    Njav("njav");
+
+    val isNjav: Boolean get() = this == Njav
+
+    companion object {
+        fun fromValue(value: String?): SiteSource =
+            entries.firstOrNull { it.value == value } ?: Hanime1
+
+        fun fromPreference(value: String?): SiteSource = fromValue(value)
+    }
+}
+
 data class AppSettings(
     val appLanguage: AppLanguage = AppLanguage.SYSTEM,
     val themeMode: ThemeMode = ThemeMode.Light,
@@ -116,6 +137,8 @@ data class AppSettings(
     val cloudFlareCookie: String = "",
     val cloudFlareCookieHost: String = "",
     val domainName: String = "https://hanime1.me/",
+    /** 当前数据源，默认仍走 hanime1.me。 */
+    val siteSource: SiteSource = SiteSource.Hanime1,
     val selectedBaseUrl: String = "https://hanime1.me/",
     val useCustomMirrorSite: Boolean = false,
     val customMirrorSite: String = "",

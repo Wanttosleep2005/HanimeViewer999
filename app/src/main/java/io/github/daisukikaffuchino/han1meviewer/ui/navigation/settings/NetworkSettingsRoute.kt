@@ -22,6 +22,7 @@ import androidx.core.net.toUri
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.daisukikaffuchino.han1meviewer.EMPTY_STRING
 import io.github.daisukikaffuchino.han1meviewer.logic.SettingsRepository
+import io.github.daisukikaffuchino.han1meviewer.logic.model.SiteSource
 import io.github.daisukikaffuchino.han1meviewer.R
 import io.github.daisukikaffuchino.han1meviewer.logic.Parser
 import io.github.daisukikaffuchino.han1meviewer.logic.network.DohConfig
@@ -199,6 +200,17 @@ fun NetworkSettingsRouteScreen(embedded: Boolean = false) {
                 pendingCustomMirrorSite = SettingsRepository.customMirrorSite
                 pendingAppendCustomMirrorPath = SettingsRepository.appendCustomMirrorPath
                 showDomainRestartConfirm = true
+            }
+        },
+        siteSource = SettingsRepository.siteSource.value,
+        onSiteSourceChange = { newValue ->
+            val source = SiteSource.fromValue(newValue)
+            if (source != SettingsRepository.siteSource) {
+                coroutineScope.launch {
+                    SettingsRepository.update { it.copy(siteSource = source) }
+                    // 换了数据源就要重建网络层，否则首页还挂在旧站点的域名上。
+                    HanimeNetwork.rebuildNetwork()
+                }
             }
         },
         onSaveCustomMirrorSite = { enabled, url, appendPath ->

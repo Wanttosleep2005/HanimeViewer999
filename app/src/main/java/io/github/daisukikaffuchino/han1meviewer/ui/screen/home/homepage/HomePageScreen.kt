@@ -101,7 +101,9 @@ fun HomePageScreen(
     val contentTopPadding = with(density) {
         WindowInsets.statusBars.getTop(this).toDp() + 72.dp
     }
-    val isAVSite = SettingsRepository.baseUrl == HanimeConstants.HANIME_URL[3]
+    // nJAV 数据源下首页内容是日本 AV，分类标题也要跟着切成 AV 那一套。
+    val isAVSite = SettingsRepository.isNjavSite ||
+            SettingsRepository.baseUrl == HanimeConstants.HANIME_URL[3]
     LaunchedEffect(Unit) {
         viewModel.initializeHomePage()
     }

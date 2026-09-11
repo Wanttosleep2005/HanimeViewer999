@@ -2,6 +2,7 @@ package io.github.daisukikaffuchino.han1meviewer
 
 import android.webkit.CookieManager
 import io.github.daisukikaffuchino.han1meviewer.logic.SettingsRepository
+import io.github.daisukikaffuchino.han1meviewer.logic.njav.NjavNetwork
 import androidx.core.text.parseAsHtml
 import io.github.daisukikaffuchino.han1meviewer.logic.network.HCookieJar
 import io.github.daisukikaffuchino.han1meviewer.util.CookieString
@@ -23,14 +24,21 @@ val Throwable.pienization: CharSequence get() = "🥺\n$localizedMessage"
 
 /**
  * 獲取 Hanime 影片地址
+ *
+ * ⚠️ nJAV 数据源下 `videoCode` 是番号 slug（如 `venx-381`），对应
+ * `https://njavtv.com/cn/{slug}`，**不是** hanime 的 `watch?v=` 形式。
  */
-fun getHanimeVideoLink(videoCode: String) = HANIME_BASE_URL + "watch?v=" + videoCode
+fun getHanimeVideoLink(videoCode: String) =
+    if (SettingsRepository.isNjavSite) NjavNetwork.detailUrl(videoCode)
+    else HANIME_BASE_URL + "watch?v=" + videoCode
 
 
 /**
  * 獲取 Hanime 搜索地址
  */
-fun getHanimeSearchLink(artist: String) = HANIME_BASE_URL + "search?query=" + artist
+fun getHanimeSearchLink(artist: String) =
+    if (SettingsRepository.isNjavSite) NjavNetwork.searchUrl(artist, 1)
+    else HANIME_BASE_URL + "search?query=" + artist
 /**
  * 獲取 Hanime 影片分享文本
  */
@@ -50,9 +58,12 @@ fun getHanimeSearchShareText(artist: String): String = buildString {
 
 /**
  * 獲取 Hanime 影片**官方**下載地址
+ *
+ * nJAV 没有官方下载页，退化成详情页链接。
  */
 fun getHanimeVideoDownloadLink(videoCode: String) =
-    HANIME_BASE_URL + "download?v=" + videoCode
+    if (SettingsRepository.isNjavSite) NjavNetwork.detailUrl(videoCode)
+    else HANIME_BASE_URL + "download?v=" + videoCode
 
 val videoUrlRegex = Regex(
     """(?:(?:https?:)?//[^\s"'<>/]+|(?:hanime(?:1|one)|javchu)\.(?:com|me))?(?:/[^/?#\s"'<>]+)*/watch\?(?:[^#\s"'<>]*&)?v=(\d+)"""
