@@ -1,6 +1,7 @@
 package io.github.daisukikaffuchino.han1meviewer.logic
 
 import io.github.daisukikaffuchino.han1meviewer.USER_AGENT
+import io.github.daisukikaffuchino.han1meviewer.logic.network.GitHubDns
 import io.github.daisukikaffuchino.han1meviewer.logic.network.HProxySelector
 import io.github.daisukikaffuchino.utils.LogUtil
 import io.github.daisukikaffuchino.utils.applicationContext
@@ -11,6 +12,7 @@ import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.File
+import java.io.FileOutputStream
 import java.io.IOException
 import java.util.concurrent.TimeUnit
 
@@ -51,24 +53,44 @@ object AppUpdateDownloader {
      * OkHttp 的 `readTimeout` 语义正是「两次数据到达之间的最大间隔」，所以这个值等于
      * **某个源卡住多久就判定它没救、换下一个**。注意它对「慢但一直在动」的源不生效
      * （那种情况至少进度条会走，不算「卡死」）。
+     *
+     * 25 s → 60 s：对齐参考项目 `HanimeViewer999`（它的 `githubClient` 就是 60 s）。
+     * 25 s 实测太紧 —— 本机到 GitHub 出口只有 30–40 KB/s，任何一次网络抖动
+     * （尤其 302 到 `release-assets` 之后的那一跳）都可能超过 25 s 没有数据块到达，
+     * 于是**明明能下完的源被误判成失败**，一路切到那几个已经死掉的镜像上，最终整体报错。
      */
-    private const val READ_TIMEOUT_SECONDS = 25L
+    private const val READ_TIMEOUT_SECONDS = 60L
 
     /**
      * GitHub 加速镜像，**前缀式**：把完整的 GitHub 链接直接拼在后面即可。
      *
-     * 这些是第三方公益加速服务，可用性会变。所以：
-     * - 官方源永远排在第一位，镜像只是回退；
-     * - 全部失败时抛错，UI 会给出「用浏览器打开」的兜底入口。
+     * 这些是第三方公益加速服务，可用性变化很快。2026-09-11 在本机实测（出沙箱、真实网络）：
+     *
+     * | 前缀 | 结果 |
+     * |---|---|
+     * | `ghproxy.net` | 206，但只有 ~12 KB/s（比官方还慢，留作最后兜底） |
+     * | `ghfast.top` | 000（完全不通） |
+     * | `gitproxy.click` | 200 但只回 195 字节的错误页 |
+     * | `gh-proxy.com` / `hub.gitmirror.com` / `gh.llkk.cc` / … | 000 |
+     *
+     * 所以**不要指望镜像**：官方源（配 [GitHubDns]）才是主力，镜像只是「聊胜于无」的最后一条。
+     * 不要再往这里堆域名 —— 实测十几个公共镜像几乎全灭，堆它们只会让失败路径变得更长。
      *
      * 安全性：APK 最终要过 Android 的签名校验（同包名必须同签名），
      * 任何被篡改的包都装不上，所以走镜像不会带来「装上假包」的风险。
      */
     private val MIRROR_PREFIXES = listOf(
         "https://ghproxy.net/",
-        "https://gitproxy.click/",
-        "https://ghfast.top/",
     )
+
+    /**
+     * 单个源的最大尝试次数。
+     *
+     * 同一个源**重试时保留半截文件、带 `Range` 从断点续传**。这一点很关键：
+     * 本机到 GitHub 出口只有 30–40 KB/s，28 MB 的包要十几分钟，
+     * 「断一次就从 0 重来」等于永远下不完。换源（不同源字节未必一致）时才清空重来。
+     */
+    private const val ATTEMPTS_PER_SOURCE = 2
 
     fun updateApkFile(): File = File(applicationContext.cacheDir, APK_NAME)
 
@@ -88,11 +110,16 @@ object AppUpdateDownloader {
      *
      * ⚠️ **必须挂 [HProxySelector]**。它读的是 `SettingsRepository` 的代理设置，在每次
      * `select()` 时动态取值，所以用户改代理后不需要重建这个 client。
+     *
+     * ⚠️ 同时必须挂 [GitHubDns]：`github.com` 与 `release-assets.githubusercontent.com`
+     * 被 DNS 投毒时，系统解析出的 IP 根本连不上 —— 这时连「开始下载」都做不到。
+     * 这是「参考项目能更新、本应用更新不动」的真正区别所在。
      */
     private val client by lazy {
         OkHttpClient.Builder()
             .connectTimeout(20, TimeUnit.SECONDS)
             .readTimeout(READ_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+            .dns(GitHubDns)
             .proxySelector(HProxySelector())
             .build()
     }
@@ -116,30 +143,40 @@ object AppUpdateDownloader {
             var lastError: Throwable? = null
 
             candidates.forEachIndexed { index, candidate ->
-                // 清掉上一轮留下的半截文件，否则会被当成本次结果
-                runCatching { updateApkFile().delete() }
-                // 换源时把进度打回 0，免得上一个源的百分比僵在那里误导用户
-                if (index > 0) onProgress?.invoke(0)
-
-                val result = runCatching { downloadFrom(candidate, onProgress) }
-                result.getOrNull()?.let { file ->
-                    LogUtil.d(
-                        TAG,
-                        "更新包下载完成（源 ${index + 1}/${candidates.size}）：${file.absolutePath}（${file.length()} 字节）"
-                    )
-                    return@withContext file
+                if (index > 0) {
+                    // 换源：不同源的字节未必一致，半截文件不能续，清掉重来
+                    runCatching { updateApkFile().delete() }
+                    onProgress?.invoke(0)
                 }
 
-                lastError = result.exceptionOrNull()
+                repeat(ATTEMPTS_PER_SOURCE) { attempt ->
+                    val result = runCatching { downloadFrom(candidate, onProgress) }
+                    result.getOrNull()?.let { file ->
+                        LogUtil.d(
+                            TAG,
+                            "更新包下载完成（源 ${index + 1}/${candidates.size}，第 ${attempt + 1} 次尝试）：" +
+                                "${file.absolutePath}（${file.length()} 字节）"
+                        )
+                        return@withContext file
+                    }
+
+                    lastError = result.exceptionOrNull()
+                    LogUtil.w(
+                        TAG,
+                        "更新源 ${index + 1} 第 ${attempt + 1} 次失败：$candidate",
+                        lastError
+                    )
+                }
+
                 if (index < candidates.lastIndex) {
-                    LogUtil.w(TAG, "更新源 ${index + 1} 失败，回退下一个：$candidate", lastError)
+                    LogUtil.w(TAG, "更新源 ${index + 1} 放弃，回退下一个：$candidate", lastError)
                 }
             }
 
             throw IOException("已尝试 ${candidates.size} 个更新源，均下载失败", lastError)
         }
 
-    /** 从**单个**源下载。任何异常都向上抛，由 [download] 决定是否换源。 */
+    /** 从**单个**源下载（支持断点续传）。任何异常都向上抛，由 [download] 决定重试或换源。 */
     private suspend fun downloadFrom(
         url: String,
         onProgress: (suspend (Int) -> Unit)?,
@@ -147,23 +184,40 @@ object AppUpdateDownloader {
         val file = updateApkFile()
         file.parentFile?.mkdirs()
 
+        // 断点续传：同源上一次下了一半就断了的话，从断点接着下（详见 ATTEMPTS_PER_SOURCE）
+        val alreadyBytes = file.takeIf { it.isFile }?.length() ?: 0L
+
         val request = Request.Builder()
             .url(url)
             .header("User-Agent", USER_AGENT)
+            .apply { if (alreadyBytes > 0L) header("Range", "bytes=$alreadyBytes-") }
             .get()
             .build()
 
-        val expectedLength = client.newCall(request).execute().use { response ->
+        val totalBytes = client.newCall(request).execute().use { response ->
+            if (response.code == 416) {
+                // 断点位置已越界（通常是上次其实已下满但校验没过），清空重来
+                file.delete()
+                throw IOException("续传位置越界（HTTP 416），已重置")
+            }
             if (!response.isSuccessful) {
                 throw IOException("HTTP ${response.code}")
             }
+
             val body = response.body
-            val contentLength = body.contentLength()
+            val bodyLength = body.contentLength()
+            // 206 = 服务端接受了 Range，可以接着写；200 = 不支持 Range，只能从头来
+            val resuming = response.code == 206 && alreadyBytes > 0L
+            val total = when {
+                !resuming -> bodyLength
+                bodyLength > 0 -> alreadyBytes + bodyLength
+                else -> -1L
+            }
 
             body.byteStream().use { input ->
-                file.outputStream().use { output ->
+                FileOutputStream(file, resuming).use { output ->
                     val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
-                    var copied = 0L
+                    var copied = if (resuming) alreadyBytes else 0L
                     var lastPercent = -1
                     while (true) {
                         // 用户取消下载时能及时退出，不会留下半截文件继续写
@@ -172,9 +226,8 @@ object AppUpdateDownloader {
                         if (read == -1) break
                         output.write(buffer, 0, read)
                         copied += read
-                        if (contentLength > 0) {
-                            val percent = ((copied * 100) / contentLength)
-                                .toInt().coerceIn(0, 100)
+                        if (total > 0) {
+                            val percent = ((copied * 100) / total).toInt().coerceIn(0, 100)
                             if (percent != lastPercent) {
                                 lastPercent = percent
                                 onProgress?.invoke(percent)
@@ -183,7 +236,7 @@ object AppUpdateDownloader {
                     }
                 }
             }
-            contentLength
+            total
         }
 
         // 只写 `body.use {}` 而不管响应码的话，4xx/5xx 会留下 0 字节文件却仍算「成功」——
@@ -193,9 +246,19 @@ object AppUpdateDownloader {
             file.delete()
             throw IOException("更新包为空（0 字节）")
         }
-        if (expectedLength > 0 && actualLength != expectedLength) {
+        if (totalBytes > 0 && actualLength != totalBytes) {
+            // 下少了（多半是中途断流）：**保留半截文件**，交给上层重试时续传，不要 delete
+            throw IOException("更新包不完整：期望 $totalBytes 字节，实际 $actualLength 字节")
+        }
+
+        // APK 本质是 zip，文件头固定为 "PK\x03\x04"。有些「加速镜像」在失败时会返回
+        // 一个**完整的** HTML 错误页 —— 长度校验会放过它，装的时候才报「解析包错误」。
+        // 这里补一道魔数校验，把这种包挡在安装之前。
+        val head = ByteArray(4)
+        runCatching { file.inputStream().use { it.read(head) } }
+        if (head[0] != 0x50.toByte() || head[1] != 0x4B.toByte()) {
             file.delete()
-            throw IOException("更新包不完整：期望 $expectedLength 字节，实际 $actualLength 字节")
+            throw IOException("更新包不是合法的 APK（文件头异常）")
         }
 
         return file

@@ -1,8 +1,8 @@
 {
-  "versionName": "26.3.2-mod.6.4",
-  "versionCode": 260918,
-  "downloadUrl": "https://github.com/ddsmie4t2g/HanimeViewer/releases/download/v26.3.2-mod.6.4/Han1meViewer-v26.3.2-mod.6.4.apk",
-  "updateDescription": "1. 修复 nJAV「点进去视频加载失败」的真凶：站点改版后详情页换了地址规则，旧的 https://njavtv.com/cn/<番号> 现在会被 301 甩到「最近更新」列表页，于是应用把列表页当成详情页解析、抠不到播放地址，表现就是点进去播不了并跳浏览器。现已改为站点现行的裸番号地址（实测 200 且能正常解出播放列表）\n2. 顺带修好由同一地址规则影响的：nJAV 影片分享链接、nJAV「官方下载页」跳转链接（此前同样指向已失效的 /cn/ 地址）\n3. 该修复对所有 nJAV 视频生效；若你遇到的是别的位置报错，请截图反馈具体位置",
+  "versionName": "26.3.2-mod.6.5",
+  "versionCode": 260919,
+  "downloadUrl": "https://github.com/ddsmie4t2g/HanimeViewer/releases/download/v26.3.2-mod.6.5/Han1meViewer-v26.3.2-mod.6.5.apk",
+  "updateDescription": "1. 修好「nJAV 点进去加载不出来」的真因：njavtv.com 的域名解析被投毒，系统 DNS 会把域名解析到完全连不上的错误 IP（Facebook 的地址段），公共 DoH（阿里）同样返回错误结果。此前的表现是每次点进影片都加载失败，容易被误判成「反爬」或「播放器不兼容」。现改为内置实测可用的节点，不再依赖系统 DNS。\n2. 修好「检查更新能弹出、但安装包下不动 / 下到一半失败」：更新下载改用内置节点解析 GitHub 域名（不再被污染解析拖死），读超时放宽到 60 秒，并支持断点续传、同源重试与安装包完整性校验（文件头校验，拦截镜像返回的错误页）。\n3. 清理掉一批已经失效的加速镜像（实测十几个公共镜像几乎全部不可用），避免在一个个死源上白等。",
   "forceUpdate": false,
   "isShowAnnouncement": false,
   "announcement": ""

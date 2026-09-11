@@ -4,6 +4,7 @@ import android.util.Base64
 import io.github.daisukikaffuchino.han1meviewer.BuildConfig
 import io.github.daisukikaffuchino.utils.LogUtil
 import io.github.daisukikaffuchino.han1meviewer.logic.SettingsRepository
+import io.github.daisukikaffuchino.han1meviewer.logic.network.GitHubDns
 import io.github.daisukikaffuchino.han1meviewer.logic.network.HProxySelector
 import io.github.daisukikaffuchino.han1meviewer.R
 import io.github.daisukikaffuchino.han1meviewer.logic.model.Announcement
@@ -111,11 +112,19 @@ object AppUpdateChecker {
      * ⚠️ 必须挂 [HProxySelector]：更新源里的 `raw.githubusercontent.com` 在部分网络下
      * 直连不通（jsDelivr 那条一般能直连，所以「检查更新」看起来还能用），
      * 挂上代理后用户配的代理对两条源都生效，和 [AppUpdateDownloader] 保持一致。
+     *
+     * ⚠️ 同时必须挂 [GitHubDns]：`raw.githubusercontent.com` 常被 DNS 投毒，
+     * 系统解析出来的 IP 直接连不上；线程池里的解析结果全是死 IP 时，
+     * 回退源等于形同虚设。见 [GitHubDns] 的说明。
+     *
+     * `readTimeout` 从 15 s 放宽到 20 s：这个值约束的是「两次数据到达之间的最大间隔」，
+     * 弱网下 15 s 太紧，会把「只是慢」误判成「失败」而白白切到更差的源。
      */
     private val client by lazy {
         OkHttpClient.Builder()
             .connectTimeout(15, TimeUnit.SECONDS)
-            .readTimeout(15, TimeUnit.SECONDS)
+            .readTimeout(20, TimeUnit.SECONDS)
+            .dns(GitHubDns)
             .proxySelector(HProxySelector())
             .build()
     }

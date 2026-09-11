@@ -41,6 +41,32 @@ class HDns : Dns {
         private const val GETCHU_HOSTNAME = "www.getchu.com"
 
         /**
+         * nJAV 系域名的**内置 IP 兜底**。
+         *
+         * ⚠️ 这里必须无条件生效（不看 `useBuiltInHosts`，也**不给 DoH / 系统 DNS 任何机会**），
+         * 原因是 `njavtv.com` 在国内被 **DNS 投毒** —— 实测 2026-09-11：
+         *
+         * | 解析途径 | 返回 | 实测 |
+         * |---|---|---|
+         * | 系统 DNS | `31.13.91.33`（**Facebook 的 IP 段**） | 连接超时 |
+         * | 阿里 DoH（dns.alidns.com） | `199.96.63.53`（同样是污染结果） | 连接超时 |
+         * | 腾讯 DoH（doh.pub） | `104.26.7.251` / `104.26.6.251` / `172.67.70.97` | **200，211 KB 真页面** |
+         *
+         * 也就是说：**只要走系统 DNS 或阿里 DoH，nJAV 详情页必然打不开**
+         * （表现为「点进去加载不出来」，用户容易误判成「反爬」或「播放器不兼容」）。
+         * 这几个 IP 是 Cloudflare 的地址，靠 SNI 路由，直接钉住即可。
+         *
+         * > 站点若换 IP，需要更新这张表。候选来源：`doh.pub` 的 `njavtv.com` A 记录。
+         * > 已排除 `199.96.63.53`（阿里 DoH 返回，实测超时，是污染结果）。
+         */
+        private val javIpsByHost: Map<String, List<String>> = mapOf(
+            "njavtv.com" to listOf("104.26.7.251", "104.26.6.251", "172.67.70.97"),
+            // 视频源（surrit.com）目前系统解析正常（Cloudflare 真实 IP），
+            // 但它是播放链路的关键域名，一并兜底，避免哪天被投毒后「能解析地址却播不了」。
+            "surrit.com" to listOf("104.18.53.139", "104.18.49.25"),
+        )
+
+        /**
          * 添加DNS
          */
         private operator fun MutableMap<String, List<InetAddress>>.set(
@@ -96,6 +122,9 @@ class HDns : Dns {
             }
         }
 
+        // nJAV 系：DNS 已被投毒，无条件走内置 IP（理由见 javIpsByHost 的注释）。
+        lookupBuiltInJav(hostname)?.let { return it }
+
         if (SettingsRepository.useBuiltInHosts && HANIME_HOSTNAME.contains(hostname)) {
             val customIps = resolveCustomIps()
             if (!customIps.isNullOrEmpty()) {
@@ -118,6 +147,19 @@ class HDns : Dns {
         }
 
         return Dns.SYSTEM.lookup(hostname)
+    }
+
+    /**
+     * nJAV 系域名的内置 IP 解析；域名不在表里就返回 null（交回上层走常规流程）。
+     */
+    private fun lookupBuiltInJav(hostname: String): List<InetAddress>? {
+        val ips = javIpsByHost[hostname.lowercase()] ?: return null
+        val resolved = ips.mapNotNull { ip ->
+            runCatching {
+                InetAddress.getByAddress(hostname, InetAddress.getByName(ip).address)
+            }.getOrNull()
+        }
+        return resolved.takeIf { it.isNotEmpty() }
     }
 
     private fun lookupByDoH(dohUrl: String, hostname: String): List<InetAddress> {
@@ -174,6 +216,9 @@ class HDns : Dns {
         if (host == GETCHU_HOSTNAME) {
             return getchuIps.distinct()
         }
+
+        // nJAV 系直接给内置 IP，别去问系统 DNS（只会拿到污染结果）
+        javIpsByHost[host.lowercase()]?.let { return it.distinct() }
 
         if (SettingsRepository.useBuiltInHosts && HANIME_HOSTNAME.contains(host)) {
             val customIps = resolveCustomIps()
