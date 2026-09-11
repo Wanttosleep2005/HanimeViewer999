@@ -161,14 +161,11 @@ fun PreviewScreen(
             is WebsiteState.Error -> true
         }
     }
-    val canNext = if (isArchiveMonth) {
-        currentDateCode < thisMonthCode
-    } else {
-        when (displayState) {
-            is WebsiteState.Success -> displayState.info.hasNext
-            else -> false
-        }
-    }
+    // ⚠️ 往后一律允许（上限为本月），**不能**沿用预告页的 info.hasNext：
+    // 站方预告停更在 202604，该页没有「下月」箭头 → hasNext=false，
+    // 用户一旦点到 202604 这种「还有预告的月份」，再往后（202605 起的归档月份）
+    // 就会被永久锁死、再也点不回来。归档数据由本应用自取，与站方箭头无关。
+    val canNext = currentDateCode < thisMonthCode
     val monthHeaderState = remember(
         currentDateCode,
         success?.info?.headerPicUrl,
