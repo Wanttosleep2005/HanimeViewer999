@@ -56,7 +56,7 @@ object AppUpdateChecker {
      * 更新信息源。原本指向上游作者的腾讯云 COS，这里改为**本仓库**根目录下的
      * `update.json`（沿用原实现的 base64 写法）：
      *
-     *     https://raw.githubusercontent.com/Wanttosleep2005/HanimeViewer/mod/update.json
+     *     https://raw.githubusercontent.com/ddsmie4t2g/HanimeViewer/mod/update.json
      *
      * 发新版时只需要改这个 json 里的 versionName / versionCode / downloadUrl 即可。
      * 字段结构与 [AppUpdatePayload] 完全一致，解析逻辑无需改动。
@@ -66,12 +66,17 @@ object AppUpdateChecker {
      *
      * 存两份、按顺序回退：`raw.githubusercontent.com` 在部分网络下直连不通，
      * 先走 jsDelivr 这个 GitHub 加速 CDN，失败再退回 raw。
+     *
+     * ⚠️ 仓库所有者是 `ddsmie4t2g`：本仓库于 2026-09-11 从 `Wanttosleep2005`
+     * 转移过来。URL 里的 owner 是**硬编码在 APK 里**的，换账号必须重新打包，
+     * 否则旧包仍去请求旧地址。转移后 GitHub 会对旧地址做 301，所以已装出去的
+     * 旧包靠 raw 那条回退链还能续上一段时间，但 jsDelivr 那条不保证。
      */
     private val UPDATE_URLS = listOf(
         // jsDelivr（GitHub 内容加速，国内一般可直连）
-        "aHR0cHM6Ly9jZG4uanNkZWxpdnIubmV0L2doL1dhbnR0b3NsZWVwMjAwNS9IYW5pbWVWaWV3ZXJAbW9kL3VwZGF0ZS5qc29u",
+        "aHR0cHM6Ly9jZG4uanNkZWxpdnIubmV0L2doL2Rkc21pZTR0MmcvSGFuaW1lVmlld2VyQG1vZC91cGRhdGUuanNvbg==",
         // GitHub raw（直连，可能需要代理）
-        "aHR0cHM6Ly9yYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tL1dhbnR0b3NsZWVwMjAwNS9IYW5pbWVWaWV3ZXIvbW9kL3VwZGF0ZS5qc29u",
+        "aHR0cHM6Ly9yYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tL2Rkc21pZTR0MmcvSGFuaW1lVmlld2VyL21vZC91cGRhdGUuanNvbg==",
     )
 
     /** 原实现用于腾讯云 COS 防盗链；对 raw.githubusercontent 无影响，保留以免动到请求结构。 */

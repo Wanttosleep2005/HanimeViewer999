@@ -86,7 +86,7 @@ jobs:
         run: |
           if [ -z "$KS" ]; then
             echo "::error::缺少 Secret RELEASE_KEYSTORE_BASE64，无法为 release APK 签名。"
-            echo "::error::本地执行：base64 -w0 ~/.android/keystore.jks | gh secret set RELEASE_KEYSTORE_BASE64 -R Wanttosleep2005/HanimeViewer"
+            echo "::error::本地执行：base64 -w0 ~/.android/keystore.jks | gh secret set RELEASE_KEYSTORE_BASE64 -R ddsmie4t2g/HanimeViewer"
             exit 1
           fi
           mkdir -p "$HOME/.android"
