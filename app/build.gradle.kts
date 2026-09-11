@@ -2,6 +2,7 @@
 
 import com.android.build.api.variant.impl.VariantOutputImpl
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import java.util.Properties
 
 plugins {
     alias(libs.plugins.com.android.application)
@@ -13,15 +14,62 @@ plugins {
     id("com.github.ben-manes.versions") version "0.59.0"
 }
 
+//<editor-fold desc="Release 签名">
+// 发布密钥与口令放在 local.properties（已被 .gitignore 忽略）。
+// 键名与另一分支的工程保持一致：keystore.file / keystore.password / key.alias [/ key.password]
+val keystoreProperties = Properties().apply {
+    val propsFile = rootProject.file("local.properties")
+    if (propsFile.exists()) propsFile.inputStream().use { load(it) }
+}
+
+fun releaseProp(key: String): String? =
+    keystoreProperties.getProperty(key)?.takeIf(String::isNotBlank)
+
+val releaseStoreFile = releaseProp("keystore.file")?.let { rootProject.file(it) }
+val releaseStorePassword = releaseProp("keystore.password")
+val releaseKeyAlias = releaseProp("key.alias")
+val releaseKeyPassword = releaseProp("key.password") ?: releaseStorePassword
+val hasReleaseSigning = releaseStoreFile != null &&
+        releaseStoreFile.exists() &&
+        releaseStorePassword != null &&
+        releaseKeyAlias != null
+
+// 只有在真的构建 release 时才强制要求签名，debug 构建不受影响。
+// 宁可配置期就失败，也不要静默产出未签名 / 错密钥的 APK 被当成正式版发出去。
+val buildingRelease =
+    gradle.startParameter.taskNames.any { it.contains("Release", ignoreCase = true) }
+if (buildingRelease && !hasReleaseSigning) {
+    error(
+        "[signing] 未找到可用的 release 签名配置，拒绝产出未签名 APK。\n" +
+                "  请在本机 local.properties 中补充：\n" +
+                "    keystore.file=<keystore 路径>\n" +
+                "    keystore.password=<store 口令>\n" +
+                "    key.alias=<别名>\n" +
+                "    key.password=<key 口令，缺省则等同 store 口令>"
+    )
+}
+//</editor-fold>
+
 android {
     compileSdk = 37
+
+    signingConfigs {
+        create("release") {
+            if (hasReleaseSigning) {
+                storeFile = releaseStoreFile
+                storePassword = releaseStorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
+            }
+        }
+    }
 
     defaultConfig {
         applicationId = "io.github.daisukikaffuchino.han1meviewer"
         minSdk = 29
         targetSdk = 37
-        versionCode = 260805
-        versionName = "26.3.2"
+        versionCode = 260910
+        versionName = "26.3.2-mod.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -57,6 +105,10 @@ android {
         release {
             isMinifyEnabled = true
             isShrinkResources = true
+            // 复用本机既有密钥（local.properties 提供路径与口令），
+            // 让签名证书指纹与 cpp/chino.h 里的 EXPECTED_SIG_HASH 一致，
+            // 否则 native 层的完整性校验会让播放页直接失败。
+            signingConfig = signingConfigs.getByName("release")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"

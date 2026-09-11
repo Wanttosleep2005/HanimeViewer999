@@ -41,6 +41,7 @@
     <string name="latest_hanime_list_monthly">%s 里番新番列表</string>
     <string name="preview_discontinued_notice">自 2026 年 5 月开始，Hanime1 站方的新番预告已经停更。可选择查看 Getchu 新番预告，可能需要 VPN 才能正常访问。</string>
     <string name="preview_month_not_updated">站方没有更新该月度的新番预告</string>
+    <string name="preview_latest_available_title">站方最近更新的新番预告（%1$s）</string>
     <string name="visit_web_version">访问网页版</string>
     <string name="latest_hanime_comment">%s 新番评论区</string>
     <string name="view_getchu_preview">查看 Getchu 预告</string>

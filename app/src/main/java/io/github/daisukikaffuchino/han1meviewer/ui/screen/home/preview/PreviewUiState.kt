@@ -71,6 +71,10 @@ data class PreviewImageViewerState(
  * @param canNext 是否可切换到下一月
  * @param monthHeaderState 月份头部状态
  * @param imageViewerState 图片查看器状态，null 表示未打开
+ * @param fallbackState 【额外内容】站方最后更新过的那一期预告的加载状态。
+ *        只有在请求月份已经停更（`actualDate != requestedDate`）时才会被展示，
+ *        用来在"站方没有更新该月度"的提示下面补一块仍然在线的真实内容。
+ * @param fallbackMonthLabel 额外内容对应的月份标签（如 "2026/4"），无额外内容时为 null
  */
 data class PreviewUiState(
     val routeState: PreviewRouteUiState = PreviewRouteUiState(),
@@ -84,6 +88,8 @@ data class PreviewUiState(
     val canNext: Boolean = false,
     val monthHeaderState: PreviewMonthHeaderState,
     val imageViewerState: PreviewImageViewerState? = null,
+    val fallbackState: WebsiteState<HanimePreview>? = null,
+    val fallbackMonthLabel: String? = null,
 )
 
 /**

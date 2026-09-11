@@ -115,12 +115,6 @@ fun PreviewScreen(
     val currentDateCode = routeState.currentDateCode
     val selectedIndex = routeState.selectedIndex
 
-    val currentDateLabel = remember(currentDateCode) { toNormalDateLabel(currentDateCode) }
-    val prevDateCode = remember(currentDateCode) { shiftMonthCode(currentDateCode, -1) }
-    val nextDateCode = remember(currentDateCode) { shiftMonthCode(currentDateCode, 1) }
-    val prevDateLabel = remember(prevDateCode) { toNormalDateLabel(prevDateCode) }
-    val nextDateLabel = remember(nextDateCode) { toNormalDateLabel(nextDateCode) }
-
     val displayState = remember(currentDateCode, previewState) {
         val cached = previewViewModel.getCachedPreview(currentDateCode)
         if (previewState is WebsiteState.Loading && cached is WebsiteState.Success) {
@@ -132,6 +126,20 @@ fun PreviewScreen(
 
     val success = displayState as? WebsiteState.Success
     val previewInfoList = success?.info?.previewInfo.orEmpty()
+
+    // 额外内容：站方最后更新过、目前仍然在线的那一期预告。
+    // 它只用来"补一块"内容，不参与标题、翻页和评论锚点——那些仍然以用户请求的月份为准。
+    val fallbackState = previewViewModel.fallbackFlow.collectAsStateWithLifecycle().value
+    val fallbackSuccess = fallbackState as? WebsiteState.Success
+    val fallbackMonthLabel = remember(fallbackSuccess?.info?.actualDate) {
+        fallbackSuccess?.info?.actualDate?.takeIf { it.isNotBlank() }?.let(::toNormalDateLabel)
+    }
+
+    val currentDateLabel = remember(currentDateCode) { toNormalDateLabel(currentDateCode) }
+    val prevDateCode = remember(currentDateCode) { shiftMonthCode(currentDateCode, -1) }
+    val nextDateCode = remember(currentDateCode) { shiftMonthCode(currentDateCode, 1) }
+    val prevDateLabel = remember(prevDateCode) { toNormalDateLabel(prevDateCode) }
+    val nextDateLabel = remember(nextDateCode) { toNormalDateLabel(nextDateCode) }
     val previewPagerState = rememberPagerState(
         initialPage = selectedIndex,
         pageCount = { previewInfoList.size.coerceAtLeast(1) })
@@ -176,6 +184,8 @@ fun PreviewScreen(
         canNext = canNext,
         monthHeaderState = monthHeaderState,
         imageViewerState = imageViewerState,
+        fallbackState = fallbackState,
+        fallbackMonthLabel = fallbackMonthLabel,
     )
 
     val handleEvent: (PreviewEvent) -> Unit = { event ->
@@ -219,6 +229,7 @@ fun PreviewScreen(
                 previewViewModel.preloadPreview(shiftMonthCodeForPreview(code, -1))
                 previewViewModel.preloadPreview(shiftMonthCodeForPreview(code, 1))
                 PreviewCommentPrefetcher.here(commentViewModel).fetch(PREVIEW_COMMENT_PREFIX, code)
+                previewViewModel.getLatestAvailablePreview(code)
             }
         }
     }
@@ -228,6 +239,8 @@ fun PreviewScreen(
         previewViewModel.preloadPreview(shiftMonthCodeForPreview(currentDateCode, -1))
         previewViewModel.preloadPreview(shiftMonthCodeForPreview(currentDateCode, 1))
         PreviewCommentPrefetcher.here(commentViewModel).fetch(PREVIEW_COMMENT_PREFIX, currentDateCode)
+        // 额外并行拉一份"最后更新过的那一期"，停更期间用来补内容
+        previewViewModel.getLatestAvailablePreview(currentDateCode)
         routeState = routeState.copy(selectedIndex = 0)
     }
 

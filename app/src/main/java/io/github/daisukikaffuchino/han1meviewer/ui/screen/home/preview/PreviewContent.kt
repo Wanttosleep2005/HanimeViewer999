@@ -28,6 +28,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.PagerState
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -35,6 +36,11 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
@@ -59,6 +65,7 @@ import io.github.daisukikaffuchino.han1meviewer.ui.component.content.ErrorConten
 import io.github.daisukikaffuchino.han1meviewer.ui.component.content.LoadingContent
 import io.github.daisukikaffuchino.han1meviewer.ui.component.lazy.LazyColumn
 import io.github.daisukikaffuchino.han1meviewer.ui.screen.rememberRandomLoadingHint
+import kotlinx.coroutines.launch
 import io.github.daisukikaffuchino.han1meviewer.ui.component.HapticButton as Button
 import io.github.daisukikaffuchino.han1meviewer.ui.component.HapticTextButton as TextButton
 
@@ -203,18 +210,41 @@ fun PreviewContent(
                     is WebsiteState.Error -> item {
                         val isPreviewEmpty =
                             uiState.displayState.throwable is HanimeNotFoundException
-                        ErrorContent(
-                            title = stringResource(R.string.hanime_list),
-                            message = if (isPreviewEmpty) {
-                                stringResource(R.string.preview_month_not_updated)
-                            } else {
-                                uiState.displayState.throwable.pienization.toString()
-                            },
-                            onRetry = if (isPreviewEmpty) null else {
-                                { onEvent(PreviewEvent.OnRetryLoad) }
-                            },
-                            modifier = Modifier.padding(horizontal = 16.dp),
-                        )
+                        // 【额外增加的一条路】请求月份已停更时，下面再补一块"站方最后更新过、
+                        // 目前仍然在线"的预告。原有的提示语与重试逻辑完全不变。
+                        val latestAvailable = (uiState.fallbackState as? WebsiteState.Success)
+                            ?.info
+                            ?.takeIf { it.isFellBack }
+                        Column(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalArrangement = Arrangement.spacedBy(16.dp),
+                        ) {
+                            ErrorContent(
+                                title = stringResource(R.string.hanime_list),
+                                message = if (isPreviewEmpty) {
+                                    stringResource(R.string.preview_month_not_updated)
+                                } else {
+                                    uiState.displayState.throwable.pienization.toString()
+                                },
+                                onRetry = if (isPreviewEmpty) null else {
+                                    { onEvent(PreviewEvent.OnRetryLoad) }
+                                },
+                                modifier = Modifier.padding(horizontal = 16.dp),
+                            )
+                            if (isPreviewEmpty && latestAvailable != null) {
+                                LatestAvailablePreviewSection(
+                                    preview = latestAvailable,
+                                    monthLabel = uiState.fallbackMonthLabel.orEmpty(),
+                                    onOpenVideo = { code ->
+                                        onEvent(PreviewEvent.OnOpenVideo(code))
+                                    },
+                                    onOpenImage = { index, imageUrls ->
+                                        onEvent(PreviewEvent.OnOpenImage(index, imageUrls))
+                                    },
+                                    modifier = Modifier,
+                                )
+                            }
+                        }
                     }
 
                     is WebsiteState.Success -> {
@@ -256,6 +286,73 @@ fun PreviewContent(
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+/**
+ * 【额外增加的一条路】"站方最后更新过的那一期"预告。
+ *
+ * 站方自 2026-05 起停更新番预告，请求当月必然拿不到内容。这里把回溯到的、
+ * 目前仍然在线的那一期原样展示出来，作为停更期间的一块补充内容——
+ * 它不改变原有的月份浏览与提示，只是让页面上不再只有一句"没有更新"。
+ */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun LatestAvailablePreviewSection(
+    preview: HanimePreview,
+    monthLabel: String,
+    onOpenVideo: (String?) -> Unit,
+    onOpenImage: (Int, List<String>) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    var selectedIndex by remember { mutableIntStateOf(0) }
+    val pagerState = rememberPagerState(
+        pageCount = { preview.previewInfo.size.coerceAtLeast(1) })
+    val scope = rememberCoroutineScope()
+
+    Column(
+        modifier = modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Text(
+            text = stringResource(R.string.preview_latest_available_title, monthLabel),
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.padding(horizontal = 16.dp),
+        )
+
+        if (preview.latestHanime.isNotEmpty()) {
+            PreviewTourRow(
+                latestHanime = preview.latestHanime,
+                selectedIndex = selectedIndex,
+                onSelect = { index ->
+                    selectedIndex = index
+                    scope.launch {
+                        if (index in preview.previewInfo.indices) {
+                            pagerState.animateScrollToPage(index)
+                        }
+                    }
+                },
+            )
+        }
+
+        if (preview.previewInfo.isNotEmpty()) {
+            HorizontalPager(
+                state = pagerState,
+                beyondViewportPageCount = 1,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 620.dp)
+                    .animateContentSize(),
+                verticalAlignment = Alignment.Top,
+            ) { page ->
+                PreviewInfoCard(
+                    previewInfo = preview.previewInfo[page],
+                    onOpenVideo = onOpenVideo,
+                    onOpenImage = onOpenImage,
+                )
             }
         }
     }

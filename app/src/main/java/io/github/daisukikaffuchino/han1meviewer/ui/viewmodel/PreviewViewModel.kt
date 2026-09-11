@@ -27,6 +27,16 @@ class PreviewViewModel : ViewModel() {
         MutableStateFlow<WebsiteState<HanimePreview>>(WebsiteState.Loading)
     val previewFlow = _previewFlow.asStateFlow()
 
+    /**
+     * 【额外增加的一条路】站方最后更新过、目前仍然在线的那一期预告。
+     *
+     * 与 [previewFlow] 相互独立：它不参与标题、月份翻页和评论，只在
+     * 用户请求的月份已经停更、拿不到内容时，往页面上补一块真实存在的内容。
+     */
+    private val _fallbackFlow =
+        MutableStateFlow<WebsiteState<HanimePreview>?>(null)
+    val fallbackFlow = _fallbackFlow.asStateFlow()
+
     fun getHanimePreview(date: String) {
         viewModelScope.launch {
             previewCache[date]?.let {
@@ -39,6 +49,22 @@ class PreviewViewModel : ViewModel() {
                 if (localizedPreview !is WebsiteState.Loading) {
                     previewCache[date] = localizedPreview
                 }
+            }
+        }
+    }
+
+    /**
+     * 拉取"站方最后更新过的那一期"预告，供页面作为额外内容展示。
+     *
+     * 走的是带月份回退的 [NetworkRepo.getHanimePreviewWithFallback]，
+     * 请求月份本身就有数据时，返回的 `actualDate` 会等于请求月份
+     * （[HanimePreview.isFellBack] 为 false），此时调用方不应重复展示。
+     */
+    fun getLatestAvailablePreview(fromDate: String) {
+        viewModelScope.launch {
+            _fallbackFlow.value = WebsiteState.Loading
+            NetworkRepo.getHanimePreviewWithFallback(fromDate).collect { preview ->
+                _fallbackFlow.value = preview.withLocalizedTags()
             }
         }
     }

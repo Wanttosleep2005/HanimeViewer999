@@ -11,7 +11,9 @@
 
 #define XOR_KEY 0x66
 
-#define EXPECTED_SIG_HASH "f28a4e14d2a2c5014be546cb1aff7aaf0bdcf8ea8534a29f9c35c20a4aa8cfe7"
+// 本仓库自行发布的版本，签名证书为 ~/.android/keystore.jks (alias: hanime)。
+// 该值 = 证书 SHA-256 指纹（小写、去冒号）。换签名密钥时必须同步替换，否则正式版视频页会拦截。
+#define EXPECTED_SIG_HASH "b3ddc86cac6c6b02ac5d7a2dd40b48e2d1ee8287298dc0355fe0c048644b7a63"
 
 extern "C" {
 JNIEXPORT jboolean JNICALL
