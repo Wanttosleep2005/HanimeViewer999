@@ -11,6 +11,7 @@ import io.github.daisukikaffuchino.han1meviewer.USER_AGENT
 import io.github.daisukikaffuchino.han1meviewer.logic.network.HProxySelector
 import io.github.daisukikaffuchino.han1meviewer.util.AnimeShaders
 import io.github.daisukikaffuchino.han1meviewer.util.AnimeShaders.getCert
+import io.github.daisukikaffuchino.utils.LogUtil
 import `is`.xyz.mpv.MPVLib
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -123,6 +124,7 @@ class MpvPlaybackEngine(
             )
             return
         }
+        applyHttpHeaders(request.headers)
         MPVLib.setOptionString("force-window", "yes")
         MPVLib.command(arrayOf("loadfile", path, "replace"))
         currentSurface?.let {
@@ -238,6 +240,31 @@ class MpvPlaybackEngine(
         publishState()
     }
 
+    /**
+     * 把 [PlaybackRequest.headers] 透传给 mpv。
+     *
+     * ⚠️ mpv 走的是**自己的**网络栈，`PlaybackRequest.headers` 不会自动生效 ——
+     * ExoPlayer（`setDefaultRequestProperties`）和 MediaPlayer（`setDataSource(…, headers)`）
+     * 都能拿到，唯独 mpv 必须显式写进 `http-header-fields` 选项，否则：
+     *
+     * - nJAV 的视频在 surrit.com 上，**不带 Referer 直接 403**；
+     * - 表现就是列表 / 封面都正常，一点进详情页就「加载失败」。
+     *
+     * 必须在 `loadfile` **之前**设置（它是 load 时读取的选项）。每次 load 都重设一遍，
+     * 这样 hanime 的视频不会继承上一次 nJAV 留下的 Referer。
+     *
+     * 值格式是 mpv 规定的 `Name: value,Name2: value2` 逗号分隔串；空串表示不发额外头。
+     */
+    private fun applyHttpHeaders(headers: Map<String, String>) {
+        val value = headers.entries
+            .filter { it.key.isNotBlank() && it.value.isNotBlank() }
+            .joinToString(",") { (name, headerValue) -> "$name: $headerValue" }
+        MPVLib.setOptionString("http-header-fields", value)
+        if (value.isNotEmpty()) {
+            LogUtil.d(TAG, "mpv http-header-fields = $value")
+        }
+    }
+
     private fun applySurfaceSize() {
         if (!initialized || released || currentSurface == null) return
         if (surfaceWidth <= 0 || surfaceHeight <= 0) return
@@ -344,6 +371,7 @@ class MpvPlaybackEngine(
         get() = if (SettingsRepository.enableGPUNextRenderer) "gpu-next" else "gpu"
 
     private companion object {
+        const val TAG = "MpvPlaybackEngine"
         const val NORMAL_END_TOLERANCE_MS = 3_000L
     }
 }

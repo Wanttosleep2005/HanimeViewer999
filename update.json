@@ -1,8 +1,8 @@
 {
-  "versionName": "26.3.2-mod.6.1",
-  "versionCode": 260915,
-  "downloadUrl": "https://github.com/ddsmie4t2g/HanimeViewer/releases/download/v26.3.2-mod.6.1/Han1meViewer-v26.3.2-mod.6.1.apk",
-  "updateDescription": "1. 修复日历/预告页「加载完毕，共 N 页」误报：hanime 按上市月份检索其实恒为单页，翻页请求返回的广告占位页被错记成新页；现在只有真正带回新条目才计入页数\n2. 修复「数据源」里 nJAV 选不生效：选中后现在会连同域名一起改掉并提示重启，重启后真正走 nJAV 网络层\n3. 「域名」列表新增 njavtv.com (nJAV)\n4. 首页抽屉「切换站点」改为三站循环：hanime 里番 → javchu(AV) → nJAV → 回到 hanime",
+  "versionName": "26.3.2-mod.6.2",
+  "versionCode": 260916,
+  "downloadUrl": "https://github.com/ddsmie4t2g/HanimeViewer/releases/download/v26.3.2-mod.6.2/Han1meViewer-v26.3.2-mod.6.2.apk",
+  "updateDescription": "1. 修复 nJAV 视频「点进去加载失败」：mpv 播放引擎此前完全不透传 HTTP 请求头，surrit.com 上的视频缺 Referer 被 403 拦掉（ExoPlayer / 系统播放器不受影响，所以只有把默认引擎设成 mpv 的用户会踩到）；现在 mpv 也会带上 Referer/Origin\n2. 修复「检查更新」发了新版也不推送：更新检查里写死的当前版本号没跟构建版本号同步，比对永远不成立；现已改为直接读取构建版本号，以后不会再漏\n3. 修复 jsDelivr CDN 缓存导致检查更新拿到旧版信息：发布流程现在会主动刷新 CDN 缓存\n4. 「关于」页：开发者改为「二次开发者」并指向本仓库维护者，项目仓库/提交问题/论坛链接改为本仓库",
   "forceUpdate": false,
   "isShowAnnouncement": false,
   "announcement": ""

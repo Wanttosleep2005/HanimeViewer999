@@ -90,11 +90,27 @@ val HANIME_LOGIN_URL: String
 
 // github url
 
-const val HA1_GITHUB_URL = "https://github.com/daisukiKaffuChino/Han1meViewer"
+/**
+ * 上游原作者的仓库（只做署名引用，不要再作为「项目仓库」指向）。
+ */
+const val UPSTREAM_GITHUB_URL = "https://github.com/daisukiKaffuChino/Han1meViewer"
+
+/**
+ * 当前这个 fork（mod 线）的仓库地址 —— 「关于 → 项目仓库」「提交 bug」「论坛」都指这里。
+ *
+ * ⚠️ 这个 URL 是**硬编码进 APK** 的，换仓库必须重新打包发版，旧包改不掉。
+ */
+const val HA1_GITHUB_URL = "https://github.com/ddsmie4t2g/HanimeViewer"
 
 const val HA1_GITHUB_ISSUE_URL = "$HA1_GITHUB_URL/issues"
 
 const val HA1_GITHUB_FORUM_URL = "$HA1_GITHUB_URL/discussions"
+
+/** 「关于 → 开发者」里显示的二次开发者 GitHub 用户名。 */
+const val SECONDARY_DEVELOPER_HANDLE = "ddsmie4t2g"
+
+/** 点击「关于 → 开发者」跳转的个人主页。 */
+const val SECONDARY_DEVELOPER_GITHUB_URL = "https://github.com/$SECONDARY_DEVELOPER_HANDLE"
 // for Shared Preference
 
 const val LOGIN_COOKIE = "cookie"

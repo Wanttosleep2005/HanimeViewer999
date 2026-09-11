@@ -744,7 +744,7 @@
     <string name="temporarily_unavailable">暂不可用</string>
     <string name="information">信息</string>
     <string name="version">版本号</string>
-    <string name="developer">开发者</string>
+    <string name="developer">二次开发者</string>
     <string name="user_terms">用户条款</string>
     <string name="user_terms_summary">查看首次启动时同意的使用须知</string>
     <string name="project_repository">项目仓库</string>

@@ -730,7 +730,7 @@
     <string name="temporarily_unavailable">暫時無法使用</string>
     <string name="information">資訊</string>
     <string name="version">版本號</string>
-    <string name="developer">開發者</string>
+    <string name="developer">二次開發者</string>
     <string name="user_terms">使用者條款</string>
     <string name="user_terms_summary">查看首次啟動時同意的使用須知</string>
     <string name="project_repository">專案儲存庫</string>

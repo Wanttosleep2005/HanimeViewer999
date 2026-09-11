@@ -23,6 +23,8 @@ import androidx.compose.ui.unit.dp
 import io.github.daisukikaffuchino.han1meviewer.HorizontalCardCountConfig
 import io.github.daisukikaffuchino.han1meviewer.HA1_GITHUB_URL
 import io.github.daisukikaffuchino.han1meviewer.R
+import io.github.daisukikaffuchino.han1meviewer.SECONDARY_DEVELOPER_GITHUB_URL
+import io.github.daisukikaffuchino.han1meviewer.SECONDARY_DEVELOPER_HANDLE
 import io.github.daisukikaffuchino.han1meviewer.SearchGridColumnsConfig
 import io.github.daisukikaffuchino.han1meviewer.ui.component.ChoiceDialog
 import io.github.daisukikaffuchino.han1meviewer.ui.component.SettingInfoItem
@@ -556,9 +558,9 @@ fun HomeSettingsScreen(
                         )
                         SettingNavigationItem(
                             title = stringResource(R.string.developer),
-                            summary = "@daisukiKaffuChino",
+                            summary = "@$SECONDARY_DEVELOPER_HANDLE",
                             iconRes = R.drawable.ic_person,
-                            onClick = { uriHandler.openUri("https://github.com/daisukiKaffuChino") },
+                            onClick = { uriHandler.openUri(SECONDARY_DEVELOPER_GITHUB_URL) },
                         )
                         SettingNavigationItem(
                             title = stringResource(R.string.user_terms),
@@ -572,7 +574,7 @@ fun HomeSettingsScreen(
                     SettingsSection("GitHub") {
                         SettingNavigationItem(
                             title = stringResource(R.string.project_repository),
-                            summary = "daisukiKaffuChino/Han1meViewer",
+                            summary = "ddsmie4t2g/HanimeViewer",
                             iconRes = R.drawable.ic_ext_link,
                             onClick = { uriHandler.openUri(HA1_GITHUB_URL) },
                         )

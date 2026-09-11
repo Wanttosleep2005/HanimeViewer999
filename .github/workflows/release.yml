@@ -191,3 +191,16 @@ jobs:
           files: ${{ steps.ver.outputs.apk }}
           body_path: release-notes.md
           prerelease: ${{ github.event_name == 'workflow_dispatch' && inputs.prerelease == true }}
+
+      # 客户端「检查更新」优先走 jsDelivr（国内可直连），但 jsDelivr 对
+      # gh/<owner>/<repo>@<branch>/<file> 有 12 小时的 s-maxage 缓存，
+      # **且缓存键不含 query string** —— 所以在 APK 侧拼 `?t=<时间戳>` 完全无效。
+      # 不主动刷的话，发版后客户端最长 12 小时都还拿到旧的 update.json，
+      # 表现就是「明明发了新版，检查更新却说不更新」。
+      #
+      # purge 失败不影响发布（|| true），客户端还有 raw 那条回退源兜底。
+      - name: Purge jsDelivr cache for update.json
+        run: |
+          echo "Purging jsDelivr: gh/ddsmie4t2g/HanimeViewer@mod/update.json"
+          curl -sS -m 30 "https://purge.jsdelivr.net/gh/ddsmie4t2g/HanimeViewer@mod/update.json" || true
+          echo

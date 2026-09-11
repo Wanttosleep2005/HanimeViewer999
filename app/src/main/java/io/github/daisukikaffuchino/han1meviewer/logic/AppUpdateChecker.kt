@@ -1,6 +1,7 @@
 package io.github.daisukikaffuchino.han1meviewer.logic
 
 import android.util.Base64
+import io.github.daisukikaffuchino.han1meviewer.BuildConfig
 import io.github.daisukikaffuchino.utils.LogUtil
 import io.github.daisukikaffuchino.han1meviewer.logic.SettingsRepository
 import io.github.daisukikaffuchino.han1meviewer.R
@@ -82,8 +83,20 @@ object AppUpdateChecker {
     /** 原实现用于腾讯云 COS 防盗链；对 raw.githubusercontent 无影响，保留以免动到请求结构。 */
     private const val ENCODED_UPDATE_REFERER = "aG5tdmlld2VydXAuY29t"
 
-    // 需与 app/build.gradle.kts 的 versionCode 保持一致
-    private const val CURRENT_VERSION_CODE = 260914
+    /**
+     * 当前安装在设备上的版本号。
+     *
+     * ⚠️ **不要**再在这里写死一个常量。历史上这里写的是 `260914`，而
+     * `app/build.gradle.kts` 的 `versionCode` 是 `260915`，两边一旦不同步，
+     * `it.versionCode > currentVersionCode` 就永远不成立 —— 表现就是
+     * **发版之后「检查更新」一直不推送，明明仓库里的 update.json 已经是最新的**。
+     *
+     * `BuildConfig.VERSION_CODE` 由 `build.gradle.kts` 的 `defaultConfig.versionCode`
+     * 生成（见 `buildConfigField("int", "VERSION_CODE", ...)`），是同一份数据源，
+     * 天然不会漂移。
+     */
+    private val currentVersionCode: Int
+        get() = BuildConfig.VERSION_CODE
 
     private val jsonParser = Json {
         ignoreUnknownKeys = true
@@ -166,7 +179,6 @@ object AppUpdateChecker {
             return null
         }
 
-        val currentVersionCode = CURRENT_VERSION_CODE
         val ignoredVersionCode = SettingsRepository.current.ignoredVersionCode
         return AppUpdateInfo(
             versionName = versionName,

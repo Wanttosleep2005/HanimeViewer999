@@ -759,7 +759,7 @@ Recommendations are as follows:\n
     <string name="temporarily_unavailable">Temporarily unavailable</string>
     <string name="information">Information</string>
     <string name="version">Version</string>
-    <string name="developer">Developer</string>
+    <string name="developer">Secondary Developer</string>
     <string name="user_terms">User Terms</string>
     <string name="user_terms_summary">View the usage notice accepted on first launch</string>
     <string name="project_repository">Project Repository</string>
