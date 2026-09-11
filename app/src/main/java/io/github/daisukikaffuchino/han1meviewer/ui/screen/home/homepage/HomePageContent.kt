@@ -21,6 +21,7 @@ import io.github.daisukikaffuchino.han1meviewer.ui.preview.ComponentPreview
 import io.github.daisukikaffuchino.han1meviewer.ui.preview.fakeAnnouncements
 import io.github.daisukikaffuchino.han1meviewer.ui.preview.fakeHomePage
 import io.github.daisukikaffuchino.han1meviewer.ui.screen.home.homepage.component.AnnouncementCard
+import io.github.daisukikaffuchino.han1meviewer.ui.screen.home.homepage.component.AppUpdateActionState
 import io.github.daisukikaffuchino.han1meviewer.ui.screen.home.homepage.component.AppUpdateCard
 import io.github.daisukikaffuchino.han1meviewer.ui.screen.home.homepage.component.BannerCarousel
 import io.github.daisukikaffuchino.han1meviewer.ui.screen.home.homepage.component.CategoryRow
@@ -38,6 +39,7 @@ fun HomePageContent(
     data: HomeData,
     updateInfo: AppUpdateInfo?,
     updateAnnouncement: Announcement?,
+    updateActionState: AppUpdateActionState,
     isAVSite: Boolean,
     onEvent: (HomeUiEvent) -> Unit,
     onCloseAnnouncement: () -> Unit,
@@ -76,12 +78,13 @@ fun HomePageContent(
                 AppUpdateCard(
                     updateInfo = updateInfo,
                     onUpdateClick = {
-                        onEvent(HomeUiEvent.OpenUpdatePage(updateInfo.downloadUrl))
+                        onEvent(HomeUiEvent.UpdateAction(updateInfo.downloadUrl, updateInfo.versionCode))
                     },
                     onIgnoreClick = {
                         onEvent(HomeUiEvent.IgnoreUpdate(updateInfo.versionCode))
                     },
                     modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                    actionState = updateActionState,
                 )
             }
         }
@@ -151,6 +154,7 @@ private fun HomePageContentPreview() {
                     forceUpdate = false,
                 ),
                 updateAnnouncement = fakeAnnouncements.first(),
+                updateActionState = AppUpdateActionState.Downloading(30),
                 isAVSite = false,
                 onEvent = {},
                 onCloseAnnouncement = {},

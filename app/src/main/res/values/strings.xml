@@ -699,6 +699,12 @@ Recommendations are as follows:\n
     <string name="ignore_this_update">Ignore this version</string>
     <string name="checking_for_updates">Checking for updates…</string>
     <string name="update_link_open_failed">Unable to open the update link</string>
+    <string name="update_downloading_short">Downloading…</string>
+    <string name="downloading_update">Downloading update…</string>
+    <string name="downloading_update_percent">Downloading update… %1$d%%</string>
+    <string name="update_install_now">Install now</string>
+    <string name="update_download_failed">Update download failed. Please retry.</string>
+    <string name="update_install_permission_required">Allow this app to install unknown apps, then tap Install again.</string>
     <string name="settings_video_playback">Video playback preferences</string>
     <string name="settings_video_playback_summary">Video display and playback behavior preferences</string>
     <string name="settings_player_summary">Playback engine, subtitles and advanced player options</string>

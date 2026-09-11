@@ -78,7 +78,7 @@ object AppUpdateChecker {
     private const val ENCODED_UPDATE_REFERER = "aG5tdmlld2VydXAuY29t"
 
     // 需与 app/build.gradle.kts 的 versionCode 保持一致
-    private const val CURRENT_VERSION_CODE = 260912
+    private const val CURRENT_VERSION_CODE = 260913
 
     private val jsonParser = Json {
         ignoreUnknownKeys = true

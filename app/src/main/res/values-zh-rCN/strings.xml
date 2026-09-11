@@ -684,6 +684,12 @@
     <string name="ignore_this_update">忽略此版本</string>
     <string name="checking_for_updates">正在检查更新…</string>
     <string name="update_link_open_failed">无法打开更新链接</string>
+    <string name="update_downloading_short">下载中…</string>
+    <string name="downloading_update">正在下载更新…</string>
+    <string name="downloading_update_percent">正在下载更新… %1$d%%</string>
+    <string name="update_install_now">立即安装</string>
+    <string name="update_download_failed">更新包下载失败，请重试</string>
+    <string name="update_install_permission_required">请先允许本应用安装未知来源应用，然后再次点击「立即安装」</string>
     <string name="settings_video_playback">影片播放偏好</string>
     <string name="settings_video_playback_summary">影片显示与播放行为偏好</string>
     <string name="settings_player_summary">播放内核、字幕与播放器高级选项</string>

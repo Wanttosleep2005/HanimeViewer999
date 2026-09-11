@@ -49,6 +49,7 @@ import io.github.daisukikaffuchino.han1meviewer.ui.component.isFirstPageEmpty
 import io.github.daisukikaffuchino.han1meviewer.ui.component.isFirstPageError
 import io.github.daisukikaffuchino.han1meviewer.ui.component.isFirstPageLoading
 import io.github.daisukikaffuchino.han1meviewer.ui.screen.home.homepage.component.HomePageTopBar
+import io.github.daisukikaffuchino.han1meviewer.ui.screen.home.homepage.component.AppUpdateActionState
 import io.github.daisukikaffuchino.han1meviewer.ui.screen.home.homepage.component.AppUpdateCard
 import io.github.daisukikaffuchino.han1meviewer.ui.screen.home.homepage.component.AnnouncementCard
 import io.github.daisukikaffuchino.han1meviewer.ui.screen.rememberRandomLoadingHint
@@ -75,6 +76,7 @@ fun HomePageScreen(
     val pageState by viewModel.homePageFlow.collectAsStateWithLifecycle()
     val updateState by viewModel.appUpdateState.collectAsStateWithLifecycle()
     val updateAnnouncement by viewModel.updateAnnouncement.collectAsStateWithLifecycle()
+    val updateDownloadState by viewModel.updateDownloadState.collectAsStateWithLifecycle()
     val settings by SettingsRepository.settings.collectAsStateWithLifecycle()
     val refreshState = rememberPullToRefreshState()
     val homeListState = rememberLazyListState()
@@ -127,6 +129,18 @@ fun HomePageScreen(
     }
     val forcedUpdate = availableUpdate?.takeIf { it.forceUpdate }
 
+    // ViewModel 的状态 → 纯 UI 状态。卡片只认 AppUpdateActionState，不依赖 ViewModel。
+    val updateActionState = when (val s = updateDownloadState) {
+        is HomePageViewModel.UpdateDownloadState.Idle -> AppUpdateActionState.Idle
+        // Pending = 已入队但还没拿到第一个进度值 → 走「不确定」进度条
+        is HomePageViewModel.UpdateDownloadState.Pending -> AppUpdateActionState.Downloading(null)
+        is HomePageViewModel.UpdateDownloadState.Downloading ->
+            AppUpdateActionState.Downloading(s.progress)
+
+        is HomePageViewModel.UpdateDownloadState.ReadyToInstall -> AppUpdateActionState.ReadyToInstall
+        is HomePageViewModel.UpdateDownloadState.Failed -> AppUpdateActionState.Failed(s.message)
+    }
+
     LaunchedEffect(pageState) {
         val errorState = pageState as? PageState.Error
         if (wasRefreshing && errorState?.cachedInfo != null) {
@@ -166,9 +180,10 @@ fun HomePageScreen(
                         AppUpdateCard(
                             updateInfo = forcedUpdate,
                             onUpdateClick = {
-                                onEvent(HomeUiEvent.OpenUpdatePage(forcedUpdate.downloadUrl))
+                                onEvent(HomeUiEvent.UpdateAction(forcedUpdate.downloadUrl, forcedUpdate.versionCode))
                             },
                             onIgnoreClick = {},
+                            actionState = updateActionState,
                         )
                     }
                 }
@@ -215,6 +230,7 @@ fun HomePageScreen(
                                     data = data,
                                     updateInfo = availableUpdate,
                                     updateAnnouncement = updateAnnouncement,
+                                    updateActionState = updateActionState,
                                     isAVSite = isAVSite,
                                     onEvent = onEvent,
                                     onCloseAnnouncement = viewModel::dismissAnnouncements,

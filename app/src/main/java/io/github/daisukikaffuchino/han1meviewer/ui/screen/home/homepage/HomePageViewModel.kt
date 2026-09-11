@@ -1,12 +1,15 @@
 package io.github.daisukikaffuchino.han1meviewer.ui.screen.home.homepage
 
 import io.github.daisukikaffuchino.utils.LogUtil
+import io.github.daisukikaffuchino.utils.applicationContext
 import androidx.annotation.StringRes
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import io.github.daisukikaffuchino.han1meviewer.BuildConfig
 import io.github.daisukikaffuchino.han1meviewer.logic.SettingsRepository
 import io.github.daisukikaffuchino.han1meviewer.R
 import io.github.daisukikaffuchino.han1meviewer.logic.AppUpdateChecker
+import io.github.daisukikaffuchino.han1meviewer.logic.AppUpdateDownloader
 import io.github.daisukikaffuchino.han1meviewer.logic.AppUpdateState
 import io.github.daisukikaffuchino.han1meviewer.logic.DatabaseRepo
 import io.github.daisukikaffuchino.han1meviewer.logic.NetworkRepo
@@ -21,6 +24,8 @@ import io.github.daisukikaffuchino.han1meviewer.ui.viewmodel.AppViewModel
 import io.github.daisukikaffuchino.han1meviewer.ui.navigation.main.HanimeScreen
 import io.github.daisukikaffuchino.han1meviewer.ui.navigation.main.HomeRoute
 import io.github.daisukikaffuchino.han1meviewer.ui.navigation.main.TopLevelBackStack
+import io.github.daisukikaffuchino.han1meviewer.worker.AppUpdateWorker
+import io.github.daisukikaffuchino.han1meviewer.worker.AppUpdateWorkState
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -29,14 +34,40 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.launch
+import java.io.File
 
 class HomePageViewModel: ViewModel() {
     val mainBackStack = TopLevelBackStack<HanimeScreen>(HomeRoute)
+
+    private companion object {
+        const val TAG = "HomePageViewModel"
+    }
 
     data class SessionExpiredMessage(
         val message: String?,
         @param:StringRes val fallbackResId: Int,
     )
+
+    /**
+     * 应用内更新下载的 UI 状态。
+     *
+     * 之前点「立即更新」是 `uriHandler.openUri(downloadUrl)` → 跳浏览器，
+     * 现在改为应用内下载 + 拉起安装器，这里承载进度。
+     */
+    sealed interface UpdateDownloadState {
+        /** 未开始 / 已结束 */
+        data object Idle : UpdateDownloadState
+
+        /** 已入队等网络，或正在跑但还没拿到百分比 */
+        data object Pending : UpdateDownloadState
+
+        data class Downloading(val progress: Int) : UpdateDownloadState
+
+        /** 包已就绪、可以安装 */
+        data class ReadyToInstall(val apkFile: File) : UpdateDownloadState
+
+        data class Failed(val message: String?) : UpdateDownloadState
+    }
 
     private val _homePageFlow = MutableStateFlow<PageState<HomeData>>(PageState.Loading)
     val homePageFlow = _homePageFlow.asStateFlow()
@@ -47,17 +78,77 @@ class HomePageViewModel: ViewModel() {
     private val _appUpdateState = MutableStateFlow<AppUpdateState>(AppUpdateState.Checking)
     val appUpdateState = _appUpdateState.asStateFlow()
 
+    private val _updateDownloadState =
+        MutableStateFlow<UpdateDownloadState>(UpdateDownloadState.Idle)
+    val updateDownloadState = _updateDownloadState.asStateFlow()
+
     private val _updateAnnouncement = MutableStateFlow<Announcement?>(null)
     val updateAnnouncement = _updateAnnouncement.asStateFlow()
 
     private var homePageJob: Job? = null
     private var initializationJob: Job? = null
+    private var updateDownloadJob: Job? = null
 
     init {
         viewModelScope.launch {
             // 初始化默认已下载分组，防止[FOREIGN KEY constraint failed]
             DatabaseRepo.HanimeDownload.insertDefaultGroup()
         }
+        observeUpdateDownload()
+    }
+
+    /**
+     * 订阅下载任务。
+     *
+     * 关键判断：任务处于 Finished 时，先看**当前版本是否已经追上下载的那个 versionCode**。
+     * 装着旧版本时下载完成 → 弹安装器；装完重启后同一个 WorkManager 记录仍是 SUCCEEDED，
+     * 此时 `BuildConfig.VERSION_CODE >= targetVersionCode`，说明已经装上去了（或用户用别的方式
+     * 更新过），就顺手把残留的 APK 清掉，不再骚扰用户。这样不需要额外持久化「已处理」标记。
+     */
+    private fun observeUpdateDownload() {
+        updateDownloadJob = viewModelScope.launch {
+            AppUpdateWorker.observe(applicationContext)
+                .catch { e -> LogUtil.e(TAG, "观察更新下载任务失败", e) }
+                .collect { state ->
+                    _updateDownloadState.value = when (state) {
+                        is AppUpdateWorkState.Idle -> UpdateDownloadState.Idle
+                        is AppUpdateWorkState.Pending -> UpdateDownloadState.Pending
+                        is AppUpdateWorkState.Running ->
+                            UpdateDownloadState.Downloading(state.progress)
+
+                        is AppUpdateWorkState.Finished -> {
+                            if (state.targetVersionCode in 1..BuildConfig.VERSION_CODE) {
+                                AppUpdateDownloader.clearApkFile()
+                                UpdateDownloadState.Idle
+                            } else {
+                                UpdateDownloadState.ReadyToInstall(state.apkFile)
+                            }
+                        }
+
+                        is AppUpdateWorkState.Failed ->
+                            UpdateDownloadState.Failed(state.message)
+                    }
+                }
+        }
+    }
+
+    /** 点「立即更新」：应用内开始下载（已经是下载好的包就什么都不做，由 UI 直接走安装）。 */
+    fun startUpdateDownload(url: String, versionCode: Int) {
+        if (url.isBlank() || versionCode <= 0) return
+        when (_updateDownloadState.value) {
+            is UpdateDownloadState.Downloading, is UpdateDownloadState.Pending -> return
+            is UpdateDownloadState.ReadyToInstall -> return
+            else -> Unit
+        }
+        _updateDownloadState.value = UpdateDownloadState.Pending
+        AppUpdateWorker.enqueue(applicationContext, url, versionCode)
+    }
+
+    /** 安装完成后这条任务就没意义了，清掉，避免清缓存后 UI 还停在「安装」。 */
+    fun clearUpdateDownloadState() {
+        AppUpdateWorker.cancel(applicationContext)
+        AppUpdateDownloader.clearApkFile()
+        _updateDownloadState.value = UpdateDownloadState.Idle
     }
 
     fun initializeHomePage() {

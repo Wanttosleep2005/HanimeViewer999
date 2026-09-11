@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.width
 import io.github.daisukikaffuchino.han1meviewer.ui.component.HapticButton as Button
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.Text
@@ -31,6 +32,24 @@ import io.github.daisukikaffuchino.han1meviewer.R
 import io.github.daisukikaffuchino.han1meviewer.logic.AppUpdateInfo
 import io.github.daisukikaffuchino.han1meviewer.ui.preview.ComponentPreview
 
+/**
+ * 更新卡片的动作状态。
+ *
+ * 和 `HomePageViewModel.UpdateDownloadState` 分开定义，是为了让这个纯 UI 组件
+ * 不依赖 ViewModel；映射在 `HomePageScreen` 里做。
+ */
+sealed interface AppUpdateActionState {
+    data object Idle : AppUpdateActionState
+
+    /** 正在下载。`progress` 为 null 表示还没拿到 Content-Length，进度条走「不确定」样式 */
+    data class Downloading(val progress: Int?) : AppUpdateActionState
+
+    /** 包已下载好，点一下就能装 */
+    data object ReadyToInstall : AppUpdateActionState
+
+    data class Failed(val message: String?) : AppUpdateActionState
+}
+
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun AppUpdateCard(
@@ -38,6 +57,7 @@ fun AppUpdateCard(
     onUpdateClick: () -> Unit,
     onIgnoreClick: () -> Unit,
     modifier: Modifier = Modifier,
+    actionState: AppUpdateActionState = AppUpdateActionState.Idle,
 ) {
     OutlinedCard(
         modifier = modifier
@@ -101,24 +121,74 @@ fun AppUpdateCard(
                 )
             }
 
+            when (actionState) {
+                is AppUpdateActionState.Downloading -> {
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        val progress = actionState.progress
+                        if (progress == null) {
+                            // 服务端没给 Content-Length，做不了百分比就老老实实走不确定进度条
+                            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                        } else {
+                            LinearProgressIndicator(
+                                progress = { progress / 100f },
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                        }
+                        Text(
+                            text = if (progress == null) {
+                                stringResource(R.string.downloading_update)
+                            } else {
+                                stringResource(R.string.downloading_update_percent, progress)
+                            },
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+
+                is AppUpdateActionState.Failed -> {
+                    Text(
+                        text = actionState.message
+                            ?: stringResource(R.string.update_download_failed),
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+
+                else -> Unit
+            }
+
             FlowRow(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                if (!updateInfo.forceUpdate) {
+                if (!updateInfo.forceUpdate && actionState !is AppUpdateActionState.Downloading) {
                     TextButton(onClick = onIgnoreClick) {
                         Text(stringResource(R.string.ignore_this_update))
                     }
                 }
-                Button(onClick = onUpdateClick) {
+                Button(
+                    onClick = onUpdateClick,
+                    enabled = actionState !is AppUpdateActionState.Downloading,
+                ) {
                     Icon(
                         painter = painterResource(R.drawable.ic_download),
                         contentDescription = null,
                         modifier = Modifier.size(18.dp),
                     )
                     Spacer(Modifier.width(8.dp))
-                    Text(stringResource(R.string.update_now))
+                    Text(
+                        text = when (actionState) {
+                            is AppUpdateActionState.Downloading ->
+                                stringResource(R.string.update_downloading_short)
+
+                            is AppUpdateActionState.ReadyToInstall ->
+                                stringResource(R.string.update_install_now)
+
+                            else -> stringResource(R.string.update_now)
+                        }
+                    )
                 }
             }
         }
@@ -137,6 +207,19 @@ private fun AppUpdateCardPreview() {
     }
 }
 
+@Preview(showBackground = true, name = "Update downloading")
+@Composable
+private fun AppUpdateCardDownloadingPreview() {
+    ComponentPreview {
+        AppUpdateCard(
+            updateInfo = previewUpdateInfo(forceUpdate = false),
+            onUpdateClick = {},
+            onIgnoreClick = {},
+            actionState = AppUpdateActionState.Downloading(42),
+        )
+    }
+}
+
 @Preview(showBackground = true, name = "Required update")
 @Composable
 private fun ForcedAppUpdateCardPreview() {
@@ -145,6 +228,7 @@ private fun ForcedAppUpdateCardPreview() {
             updateInfo = previewUpdateInfo(forceUpdate = true),
             onUpdateClick = {},
             onIgnoreClick = {},
+            actionState = AppUpdateActionState.ReadyToInstall,
         )
     }
 }

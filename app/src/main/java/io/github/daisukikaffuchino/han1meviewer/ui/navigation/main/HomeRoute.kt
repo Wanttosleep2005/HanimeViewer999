@@ -2,11 +2,11 @@ package io.github.daisukikaffuchino.han1meviewer.ui.navigation.main
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel as composeViewModel
@@ -21,8 +21,10 @@ import io.github.daisukikaffuchino.han1meviewer.ui.screen.home.homepage.componen
 import io.github.daisukikaffuchino.han1meviewer.ui.component.ConfirmDialog
 import io.github.daisukikaffuchino.han1meviewer.ui.component.TripleButtonDialog
 import io.github.daisukikaffuchino.han1meviewer.ui.screen.home.homepage.HomePageScreen
+import io.github.daisukikaffuchino.han1meviewer.ui.screen.home.homepage.HomePageViewModel
 import io.github.daisukikaffuchino.han1meviewer.ui.screen.home.homepage.HomeUiEvent
 import io.github.daisukikaffuchino.han1meviewer.ui.screen.home.homepage.LocalSearchHistoryQuery
+import io.github.daisukikaffuchino.utils.installUpdateApk
 import io.github.daisukikaffuchino.utils.rememberCopyTextToClipboard
 import io.github.daisukikaffuchino.han1meviewer.ui.viewmodel.CheckInCalendarViewModel
 import io.github.daisukikaffuchino.utils.SonnerToast
@@ -46,13 +48,34 @@ fun HomeRouteScreen(
     val checkInEnabled by SettingsRepository.checkInEnabledFlow.collectAsStateWithLifecycle()
     val checkInViewModel: CheckInCalendarViewModel? = if (checkInEnabled) composeViewModel() else null
     val copyTextToClipboard = rememberCopyTextToClipboard()
-    val uriHandler = LocalUriHandler.current
     val confirmToExit = stringResource(R.string.confirm_to_exit)
     val confirmExitMessage = stringResource(R.string.confirm_exit_message)
     val cancel = stringResource(R.string.cancel)
     val exit = stringResource(R.string.exit)
     var showExitDialog by remember { mutableStateOf(false) }
     var announcement by remember { mutableStateOf<Announcement?>(null) }
+    val updateDownloadState by viewModel.updateDownloadState.collectAsStateWithLifecycle()
+
+    /**
+     * 包下好之后自动拉起一次安装器。
+     *
+     * 用 `LaunchedEffect` 而不是直接在事件回调里装：下载是异步的，完成时机不确定；
+     * 而且用户可能中途切走又切回来。这里以「已就绪的 apk 路径」为 key，
+     * 同一个包只会自动拉起一次，之后要重装得手动点按钮。
+     */
+    var autoInstallTriggeredFor by remember { mutableStateOf<String?>(null) }
+    val readyApk = (updateDownloadState as? HomePageViewModel.UpdateDownloadState.ReadyToInstall)
+        ?.apkFile
+    LaunchedEffect(readyApk?.absolutePath) {
+        val path = readyApk?.absolutePath ?: return@LaunchedEffect
+        if (autoInstallTriggeredFor == path) return@LaunchedEffect
+        autoInstallTriggeredFor = path
+        if (!activity.installUpdateApk(readyApk)) {
+            // 缺「安装未知应用」权限 —— 已经跳去授权页，授权后回来再点「立即安装」
+            SonnerToast.error(R.string.update_install_permission_required)
+        }
+    }
+
     CompositionLocalProvider(
         LocalSearchHistoryQuery provides { keyword: String ->
             DatabaseRepo.SearchHistory.loadAll(keyword).first().map { it.query }
@@ -75,9 +98,27 @@ fun HomeRouteScreen(
                     }
                     is HomeUiEvent.ShowAnnouncementDialog -> { announcement = event.announcement }
                     is HomeUiEvent.ShowExitDialog -> { showExitDialog = true }
-                    is HomeUiEvent.OpenUpdatePage -> {
-                        runCatching { uriHandler.openUri(event.downloadUrl) }
-                            .onFailure { SonnerToast.error(R.string.update_link_open_failed) }
+                    is HomeUiEvent.UpdateAction -> {
+                        when (val state = viewModel.updateDownloadState.value) {
+                            // 已经下好了 → 直接装（授权被拒过的话就是在这里重试）
+                            is HomePageViewModel.UpdateDownloadState.ReadyToInstall -> {
+                                autoInstallTriggeredFor = state.apkFile.absolutePath
+                                if (!activity.installUpdateApk(state.apkFile)) {
+                                    SonnerToast.error(R.string.update_install_permission_required)
+                                }
+                            }
+                            // 下载中：按钮此时是禁用的，这里兜底
+                            is HomePageViewModel.UpdateDownloadState.Downloading,
+                            is HomePageViewModel.UpdateDownloadState.Pending -> Unit
+
+                            // 未开始或上次失败 → 走应用内下载。
+                            // versionCode 直接用事件里带来的（不要反查 appUpdateState ——
+                            // DEBUG 的模拟卡片与真实状态是两回事）
+                            else -> viewModel.startUpdateDownload(
+                                url = event.downloadUrl,
+                                versionCode = event.versionCode,
+                            )
+                        }
                     }
                     is HomeUiEvent.IgnoreUpdate -> viewModel.ignoreUpdate(event.versionCode)
                 }
