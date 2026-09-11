@@ -1,8 +1,8 @@
 {
-  "versionName": "26.3.2-mod.4",
-  "versionCode": 260913,
-  "downloadUrl": "https://github.com/ddsmie4t2g/HanimeViewer/releases/download/v26.3.2-mod.4/Han1meViewer-v26.3.2-mod.4.apk",
-  "updateDescription": "1. 检查更新后可直接在应用内下载并安装，不再跳转浏览器\n2. 下载时通知栏显示进度，下载完成后自动拉起系统安装器\n3. 未授予「安装未知应用」权限时，会引导到对应设置页授权",
+  "versionName": "26.3.2-mod.5",
+  "versionCode": 260914,
+  "downloadUrl": "https://github.com/ddsmie4t2g/HanimeViewer/releases/download/v26.3.2-mod.5/Han1meViewer-v26.3.2-mod.5.apk",
+  "updateDescription": "1. 新增 nJAV（njavtv.com）数据源，可在「设置 → 数据源」中与 hanime1.me 之间切换\n2. nJAV 下支持首页分类、搜索、详情播放（自动注入防盗链 Referer，解决能解析出地址却播不了）\n3. 修复日历预告页翻到有数据的月份后，后续月份被灰掉锁死的问题",
   "forceUpdate": false,
   "isShowAnnouncement": false,
   "announcement": ""
