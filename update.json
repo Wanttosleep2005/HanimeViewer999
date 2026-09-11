@@ -1,8 +1,8 @@
 {
-  "versionName": "26.3.2-mod.2",
-  "versionCode": 260911,
-  "downloadUrl": "https://github.com/Wanttosleep2005/HanimeViewer/releases/download/v26.3.2-mod.2/Han1meViewer-v26.3.2-mod.2.apk",
-  "updateDescription": "1. 预告页改版：站方 2026-05 起停更，202605 之后的月份改为「按上市月份检索」，直接列出该月 1 日至月底上线的番剧\n2. 检查更新改为指向本仓库（jsDelivr / GitHub raw 双源回退）\n3. 移除「使用须知」强制阅读与「应用来源」校验，启动不再有任何拦截",
+  "versionName": "26.3.2-mod.3",
+  "versionCode": 260912,
+  "downloadUrl": "https://github.com/Wanttosleep2005/HanimeViewer/releases/download/v26.3.2-mod.3/Han1meViewer-v26.3.2-mod.3.apk",
+  "updateDescription": "1. 预告页「某月 里番新番列表」只保留里番：月度归档检索补上 genre=裏番，不再把 3D动画 / MMD / Cosplay / AI生成 等其它分类一起列出来\n2. 恢复「站方自 2026-05 起停更 / 查看网页版 / 查看 Getchu 预告」提示卡：站方预告模式与月度归档模式都常驻显示，Getchu 预告重新可进",
   "forceUpdate": false,
   "isShowAnnouncement": false,
   "announcement": ""
