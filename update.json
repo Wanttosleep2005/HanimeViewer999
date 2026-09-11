@@ -1,8 +1,8 @@
 {
-  "versionName": "26.3.2-mod.6.3",
-  "versionCode": 260917,
-  "downloadUrl": "https://github.com/ddsmie4t2g/HanimeViewer/releases/download/v26.3.2-mod.6.3/Han1meViewer-v26.3.2-mod.6.3.apk",
-  "updateDescription": "1. 修复 nJAV 视频「点进去加载失败」：上一版给 mpv 写了请求头，但用的是运行时会被静默忽略的接口（mpv 在应用启动时就已完成初始化，之后再设「选项」不生效），等于白改；现改用运行期属性接口，Referer/Origin 才真正发给 surrit.com。若你用的是 ExoPlayer/系统播放器，本条与你无关\n2. nJAV 清晰度列表可能只剩一项：站点播放地址存在 720p 与 1280x720 两种写法，旧的识别规则只认前者，认不出的会全部挤成「其他」而被去重掉；现两种写法都能识别\n3. 修复应用内下载更新「进度不动、下不下来」：下载网络请求此前没走你配置的代理，且只尝试 GitHub 官方源（国内常连不上）；现在会走代理，并在失败时依次回退到 GitHub 加速镜像\n4. 「检查更新」同样改为走你配置的代理（此前只有 jsDelivr 那条源能直连才显得正常）",
+  "versionName": "26.3.2-mod.6.4",
+  "versionCode": 260918,
+  "downloadUrl": "https://github.com/ddsmie4t2g/HanimeViewer/releases/download/v26.3.2-mod.6.4/Han1meViewer-v26.3.2-mod.6.4.apk",
+  "updateDescription": "1. 修复 nJAV「点进去视频加载失败」的真凶：站点改版后详情页换了地址规则，旧的 https://njavtv.com/cn/<番号> 现在会被 301 甩到「最近更新」列表页，于是应用把列表页当成详情页解析、抠不到播放地址，表现就是点进去播不了并跳浏览器。现已改为站点现行的裸番号地址（实测 200 且能正常解出播放列表）\n2. 顺带修好由同一地址规则影响的：nJAV 影片分享链接、nJAV「官方下载页」跳转链接（此前同样指向已失效的 /cn/ 地址）\n3. 该修复对所有 nJAV 视频生效；若你遇到的是别的位置报错，请截图反馈具体位置",
   "forceUpdate": false,
   "isShowAnnouncement": false,
   "announcement": ""

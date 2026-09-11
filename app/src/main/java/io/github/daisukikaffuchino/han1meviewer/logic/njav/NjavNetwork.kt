@@ -26,7 +26,12 @@ object NjavNetwork {
 
     const val BASE_URL = "https://njavtv.com/"
 
-    /** nJAV 的简体中文路径前缀，列表 / 搜索 / 详情都在它下面。 */
+    /**
+     * nJAV 的简体中文路径前缀。
+     *
+     * 列表 / 搜索仍在它下面（`/cn/new`、`/cn/search/xxx`），但**详情页已经不在**了 ——
+     * 站点改版后详情走裸 slug，见 [detailUrl]。
+     */
     const val LOCALE = "cn"
 
     const val ORIGIN = "https://njavtv.com"
@@ -47,7 +52,37 @@ object NjavNetwork {
         return if (page <= 1) base else "$base?page=$page"
     }
 
-    fun detailUrl(slug: String): String = "$BASE_URL$LOCALE/$slug"
+    /**
+     * 详情页地址：**裸 slug**，不带 `/cn/` 语言前缀。
+     *
+     * ⚠️ 2026-09 站点改版，旧的 `/cn/{slug}` 形式已经废了。请求它会吃到 301，
+     * 而且落点不是详情页、是「最近更新」列表页：
+     *
+     * ```
+     * GET https://njavtv.com/cn/scop-715
+     *   → 301 Location: https://njavtv.com/dm539/cn/new      ← 列表页！
+     * ```
+     *
+     * 于是 [NjavParser.video] 拿到的其实是一张列表页：`og:title` 抠不到、
+     * [NjavPacker.extractM3u8] 也抠不到任何 m3u8，最后抛
+     * `ParseException("nJAV：未能解析播放地址")`，UI 侧表现为「点进去播不了」
+     * 并跳浏览器。**这就是 nJAV 详情页打不开的真凶**。
+     *
+     * 站内卡片现在给出的是不带语言前缀的规范地址（`https://njavtv.com/scop-715`），
+     * 少数还带一层随机数字前缀（`https://njavtv.com/dm75/waaa-214`）——那个前缀
+     * 是会变的（`/dm539/` 自己 301 到 `/dm339`），**不能照抄**，所以统一走裸 slug。
+     * 实测 `GET https://njavtv.com/<slug>` → 200，且能正常解出 `playlist.m3u8`。
+     */
+    fun detailUrl(slug: String): String {
+        val value = slug.trim()
+        // 万一是外面传进来的绝对地址（分享链接 / 历史记录），原样放行。
+        if (value.startsWith("http://", ignoreCase = true) ||
+            value.startsWith("https://", ignoreCase = true)
+        ) {
+            return value
+        }
+        return BASE_URL + value.trimStart('/')
+    }
 
     /**
      * surrit.com 有防盗链：不带 Referer 直接 403（Cloudflare）。播放器要把

@@ -26,7 +26,7 @@ import org.jsoup.nodes.Element
  * ```html
  * <div class="thumbnail group">
  *   <div class="relative …">
- *     <a href="https://njavtv.com/cn/pppe-440" alt="pppe-440">
+ *     <a href="https://njavtv.com/pppe-440" alt="pppe-440">
  *       <video data-src="https://fourhoi.com/pppe-440/preview.mp4"></video>
  *       <img class="lozad w-full" data-src="https://fourhoi.com/pppe-440/cover-t.jpg" …>
  *     </a>
@@ -34,6 +34,15 @@ import org.jsoup.nodes.Element
  *   </div>
  *   <div class="my-2 …"><a href="…">PPPE-440 标题 - 女优</a></div>
  * </div>
+ * ```
+ *
+ * ⚠️ 卡片的 `href` 有**三种写法**并存，全都靠 `substringAfterLast('/')` 取尾部 slug，
+ * 所以这里不用改；但**拼详情页地址时必须走裸 slug**（见 [NjavNetwork.detailUrl]）：
+ *
+ * ```
+ * https://njavtv.com/pppe-440              ← 规范形式（当前主流）
+ * https://njavtv.com/dm75/waaa-214         ← 随机数字前缀，会变，不能照抄
+ * https://njavtv.com/npjs-158-uncensored-leak
  * ```
  *
  * 详情页的字段全在 `og:` 系列 meta 里，播放地址见 [NjavPacker]。
