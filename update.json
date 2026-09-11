@@ -1,8 +1,8 @@
 {
-  "versionName": "26.3.2-mod.6.2",
-  "versionCode": 260916,
-  "downloadUrl": "https://github.com/ddsmie4t2g/HanimeViewer/releases/download/v26.3.2-mod.6.2/Han1meViewer-v26.3.2-mod.6.2.apk",
-  "updateDescription": "1. 修复 nJAV 视频「点进去加载失败」：mpv 播放引擎此前完全不透传 HTTP 请求头，surrit.com 上的视频缺 Referer 被 403 拦掉（ExoPlayer / 系统播放器不受影响，所以只有把默认引擎设成 mpv 的用户会踩到）；现在 mpv 也会带上 Referer/Origin\n2. 修复「检查更新」发了新版也不推送：更新检查里写死的当前版本号没跟构建版本号同步，比对永远不成立；现已改为直接读取构建版本号，以后不会再漏\n3. 修复 jsDelivr CDN 缓存导致检查更新拿到旧版信息：发布流程现在会主动刷新 CDN 缓存\n4. 「关于」页：开发者改为「二次开发者」并指向本仓库维护者，项目仓库/提交问题/论坛链接改为本仓库",
+  "versionName": "26.3.2-mod.6.3",
+  "versionCode": 260917,
+  "downloadUrl": "https://github.com/ddsmie4t2g/HanimeViewer/releases/download/v26.3.2-mod.6.3/Han1meViewer-v26.3.2-mod.6.3.apk",
+  "updateDescription": "1. 修复 nJAV 视频「点进去加载失败」：上一版给 mpv 写了请求头，但用的是运行时会被静默忽略的接口（mpv 在应用启动时就已完成初始化，之后再设「选项」不生效），等于白改；现改用运行期属性接口，Referer/Origin 才真正发给 surrit.com。若你用的是 ExoPlayer/系统播放器，本条与你无关\n2. nJAV 清晰度列表可能只剩一项：站点播放地址存在 720p 与 1280x720 两种写法，旧的识别规则只认前者，认不出的会全部挤成「其他」而被去重掉；现两种写法都能识别\n3. 修复应用内下载更新「进度不动、下不下来」：下载网络请求此前没走你配置的代理，且只尝试 GitHub 官方源（国内常连不上）；现在会走代理，并在失败时依次回退到 GitHub 加速镜像\n4. 「检查更新」同样改为走你配置的代理（此前只有 jsDelivr 那条源能直连才显得正常）",
   "forceUpdate": false,
   "isShowAnnouncement": false,
   "announcement": ""

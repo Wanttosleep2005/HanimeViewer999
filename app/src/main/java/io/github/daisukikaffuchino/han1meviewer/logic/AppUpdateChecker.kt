@@ -4,6 +4,7 @@ import android.util.Base64
 import io.github.daisukikaffuchino.han1meviewer.BuildConfig
 import io.github.daisukikaffuchino.utils.LogUtil
 import io.github.daisukikaffuchino.han1meviewer.logic.SettingsRepository
+import io.github.daisukikaffuchino.han1meviewer.logic.network.HProxySelector
 import io.github.daisukikaffuchino.han1meviewer.R
 import io.github.daisukikaffuchino.han1meviewer.logic.model.Announcement
 import io.github.daisukikaffuchino.utils.applicationContext
@@ -104,10 +105,18 @@ object AppUpdateChecker {
         allowTrailingComma = true
     }
 
+    /**
+     * 检查更新用的 client。
+     *
+     * ⚠️ 必须挂 [HProxySelector]：更新源里的 `raw.githubusercontent.com` 在部分网络下
+     * 直连不通（jsDelivr 那条一般能直连，所以「检查更新」看起来还能用），
+     * 挂上代理后用户配的代理对两条源都生效，和 [AppUpdateDownloader] 保持一致。
+     */
     private val client by lazy {
         OkHttpClient.Builder()
             .connectTimeout(15, TimeUnit.SECONDS)
             .readTimeout(15, TimeUnit.SECONDS)
+            .proxySelector(HProxySelector())
             .build()
     }
 

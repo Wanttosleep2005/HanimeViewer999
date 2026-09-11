@@ -222,14 +222,45 @@ object NjavParser {
         urls.filter { it != master }
             .distinct()
             .forEach { url ->
-                val label = RESOLUTION_IN_URL.find(url)?.groupValues?.get(1)?.let { "${it}P" } ?: "其他"
+                val label = qualityLabel(url)
                 if (label !in map) map[label] = HanimeLink(url, null)
             }
         master?.let { map["自动"] = HanimeLink(it, null) }
         return map
     }
 
-    private val RESOLUTION_IN_URL = Regex("""/(\d{3,4})p/""")
+    /**
+     * 从播放地址里抽清晰度标签。
+     *
+     * 站点有两代路径写法，都要能吃下（2026-09 实测两者并存）：
+     *
+     * ```
+     * https://surrit.com/<uuid>/720p/video.m3u8        ← 现行
+     * https://surrit.com/<uuid>/1280x720/video.m3u8    ← 另一种
+     * ```
+     *
+     * 注意 `1280x720` 里的 `720` 是**高**，`842x480` 里的 `480` 也是高 ——
+     * 统一取高度当标签（`720P` / `480P`），跟 hanime 侧的
+     * [io.github.daisukikaffuchino.han1meviewer.HanimeResolution] 命名保持一致。
+     *
+     * ⚠️ 别再写回 `/(\d{3,4})p/` 这种只认一种写法的正则：一旦站点换成
+     * `1280x720` 形式，所有条目都会掉进「其他」，而 [buildVideoUrls] 里的
+     * 去重是「同标签只留第一个」，于是清晰度列表会**只剩一项**。
+     */
+    private fun qualityLabel(url: String): String {
+        val groups = RESOLUTION_IN_URL.find(url)?.groupValues ?: return UNKNOWN_QUALITY_LABEL
+        // 1=宽、2=高（`1280x720`）；3=高（`720p`，另一种写法里 1、2 参与不到匹配，是空串）
+        val height = groups.getOrNull(2)?.takeIf { it.isNotBlank() }
+            ?: groups.getOrNull(3)?.takeIf { it.isNotBlank() }
+            ?: groups.getOrNull(1)?.takeIf { it.isNotBlank() }
+            ?: return UNKNOWN_QUALITY_LABEL
+        return "${height}P"
+    }
+
+    private val RESOLUTION_IN_URL = Regex("""/(?:(\d{3,4})x(\d{3,4})|(\d{3,4})p)/""", RegexOption.IGNORE_CASE)
+
+    /** 认不出清晰度时的兜底标签。 */
+    private const val UNKNOWN_QUALITY_LABEL = "其他"
 
     //</editor-fold>
 

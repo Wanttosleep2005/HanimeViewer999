@@ -245,13 +245,29 @@ class MpvPlaybackEngine(
      *
      * ⚠️ mpv 走的是**自己的**网络栈，`PlaybackRequest.headers` 不会自动生效 ——
      * ExoPlayer（`setDefaultRequestProperties`）和 MediaPlayer（`setDataSource(…, headers)`）
-     * 都能拿到，唯独 mpv 必须显式写进 `http-header-fields` 选项，否则：
+     * 都能拿到，唯独 mpv 必须显式写进 `http-header-fields`，否则：
      *
-     * - nJAV 的视频在 surrit.com 上，**不带 Referer 直接 403**；
+     * - nJAV 的视频在 surrit.com 上，**不带 Referer 直接 403**（Cloudflare）；
      * - 表现就是列表 / 封面都正常，一点进详情页就「加载失败」。
      *
-     * 必须在 `loadfile` **之前**设置（它是 load 时读取的选项）。每次 load 都重设一遍，
+     * 必须在 `loadfile` **之前**设置（网络流是在 load 时才打开的）。每次 load 都重设一遍，
      * 这样 hanime 的视频不会继承上一次 nJAV 留下的 Referer。
+     *
+     * ---
+     *
+     * ## 为什么是 `setPropertyString` 而不是 `setOptionString`
+     *
+     * 这里踩过一个很隐蔽的坑，也是「修了却没生效」的原因：
+     *
+     * `MPVLib.init()`（即 `mpv_initialize()`）在 [io.github.daisukikaffuchino.han1meviewer.HanimeApplication]
+     * 的 `onCreate()` 里**应用一启动就调用了**，而 `mpv_set_option*()` 按 mpv 的规定
+     * 「只能在 `mpv_initialize()` 之前使用」。运行期再调 `setOptionString` 会被**静默忽略**
+     * —— 不抛异常、不打日志（`MPVLib.setOptionString` 的 JNI 层丢弃了返回码），
+     * 于是看起来「代码明明写对了，Referer 就是没发出去」。
+     *
+     * 正确的运行期入口是 `mpv_set_property*()`：client.h 明确写着自 mpv 0.21 起
+     * *"this can be used to set options in general"*。`MPVLib.setPropertyString()` 对应
+     * 它，能在 init 之后真正改到 `http-header-fields`。
      *
      * 值格式是 mpv 规定的 `Name: value,Name2: value2` 逗号分隔串；空串表示不发额外头。
      */
@@ -259,7 +275,7 @@ class MpvPlaybackEngine(
         val value = headers.entries
             .filter { it.key.isNotBlank() && it.value.isNotBlank() }
             .joinToString(",") { (name, headerValue) -> "$name: $headerValue" }
-        MPVLib.setOptionString("http-header-fields", value)
+        MPVLib.setPropertyString("http-header-fields", value)
         if (value.isNotEmpty()) {
             LogUtil.d(TAG, "mpv http-header-fields = $value")
         }
