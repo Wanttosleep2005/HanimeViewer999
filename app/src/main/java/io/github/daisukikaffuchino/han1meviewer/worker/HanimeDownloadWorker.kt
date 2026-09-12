@@ -580,21 +580,27 @@ class HanimeDownloadWorker(
      *   中途断网就只能从 0 重下 —— 这种两小时、上 GB 的片子代价太大。
      */
     private suspend fun downloadHls(entity: HanimeDownloadEntity): Result = withContext(Dispatchers.IO) {
-        val media = resolveHlsMedia()
-        val file = HFileManager.getDownloadVideoFile(
-            context = context,
-            videoCode = videoCode,
-            title = hanimeName,
-            quality = quality,
-            suffix = videoType,
-        )
-        file.parentFile?.mkdirs()
-        val indexFile = File(file.parentFile, file.name + HLS_INDEX_SUFFIX)
-        val sink = openHlsSink(file)
         var downloadedLength = entity.downloadedLength
         var result: Result = Result.failure(workDataOf(DownloadState.STATE to DownloadState.Failed.mask))
+        var sink: HlsSink? = null
 
         try {
+            // ⚠️ 下面这几步都会失败（解析清单要联网、SAF 目录可能打不开），
+            // 所以要放在 try 里走统一的错误上报 —— 别让异常直接抛出去，
+            // 那会既没有通知、也没有 DB 状态，任务就"凭空消失"了。
+            val media = resolveHlsMedia()
+            val file = HFileManager.getDownloadVideoFile(
+                context = context,
+                videoCode = videoCode,
+                title = hanimeName,
+                quality = quality,
+                suffix = videoType,
+            )
+            file.parentFile?.mkdirs()
+            val indexFile = File(file.parentFile, file.name + HLS_INDEX_SUFFIX)
+            val openedSink = openHlsSink(file)
+            sink = openedSink
+
             // 读取上次的续传点
             var startIndex = 0
             var resumeLength = 0L
@@ -606,14 +612,14 @@ class HanimeDownloadWorker(
                     resumeLength = parts[1].toLongOrNull() ?: 0L
                 }
             }
-            val actualSize = sink.position()
+            val actualSize = openedSink.position()
             // 索引与实际文件对不上（权限被清过、上次最后一片没写完）→ 整段重来，
             // 宁可慢也不能交出一个中间缺一段的文件。
             if (startIndex !in 0..media.segments.size || resumeLength > actualSize) {
                 startIndex = 0
                 resumeLength = 0L
             }
-            sink.truncate(resumeLength)
+            openedSink.truncate(resumeLength)
             downloadedLength = resumeLength
             if (startIndex == 0) indexFile.delete()
             LogUtil.d(
@@ -621,12 +627,12 @@ class HanimeDownloadWorker(
                 "HLS 开始：共 ${media.segments.size} 片，从第 ${startIndex + 1} 片起，已有 $resumeLength 字节"
             )
 
-            media.initSegment?.let { if (startIndex == 0) fetchHlsSegment(it, sink) }
+            media.initSegment?.let { if (startIndex == 0) fetchHlsSegment(it, openedSink) }
 
             var lastUpdate = 0L
             for (i in startIndex until media.segments.size) {
                 currentCoroutineContext().ensureActive()
-                downloadedLength += fetchHlsSegment(media.segments[i].url, sink)
+                downloadedLength += fetchHlsSegment(media.segments[i].url, openedSink)
                 indexFile.appendText("${i + 1},$downloadedLength\n")
 
                 val now = System.currentTimeMillis()
@@ -689,7 +695,7 @@ class HanimeDownloadWorker(
             }
         } finally {
             // 索引文件保留，下次接着下
-            sink.close()
+            sink?.close()
         }
         return@withContext result
     }
