@@ -48,6 +48,8 @@ import io.github.daisukikaffuchino.han1meviewer.HA1_GITHUB_ISSUE_URL
 import io.github.daisukikaffuchino.han1meviewer.HanimeApplication
 import io.github.daisukikaffuchino.han1meviewer.logic.SettingsRepository
 import io.github.daisukikaffuchino.han1meviewer.R
+import io.github.daisukikaffuchino.han1meviewer.logic.AppUpdateCheckResult
+import io.github.daisukikaffuchino.han1meviewer.logic.AppUpdateChecker
 import io.github.daisukikaffuchino.han1meviewer.logic.BackupManager
 import io.github.daisukikaffuchino.han1meviewer.logic.LocalListRepository
 import io.github.daisukikaffuchino.han1meviewer.logic.OnlineListsBackup
@@ -59,6 +61,8 @@ import io.github.daisukikaffuchino.han1meviewer.logic.model.ThemeMode
 import io.github.daisukikaffuchino.han1meviewer.logic.model.VideoLandscapeLayoutStyle
 import io.github.daisukikaffuchino.han1meviewer.ui.activity.MainActivity
 import io.github.daisukikaffuchino.han1meviewer.ui.component.ConfirmDialog
+import io.github.daisukikaffuchino.han1meviewer.ui.screen.home.homepage.component.AppUpdateActionState
+import io.github.daisukikaffuchino.han1meviewer.ui.screen.settings.dialog.AppUpdateCheckDialog
 import io.github.daisukikaffuchino.han1meviewer.ui.screen.settings.HomeSettingsPage
 import io.github.daisukikaffuchino.han1meviewer.ui.screen.settings.HomeSettingsScreen
 import io.github.daisukikaffuchino.han1meviewer.ui.screen.settings.model.HomeSettingsUiState
@@ -67,10 +71,14 @@ import io.github.daisukikaffuchino.han1meviewer.ui.screen.home.homepage.hiddenHo
 import io.github.daisukikaffuchino.han1meviewer.ui.screen.home.homepage.homeCategoryOrder
 import io.github.daisukikaffuchino.han1meviewer.ui.screen.home.homepage.saveHomeCategoryPreferences
 import io.github.daisukikaffuchino.han1meviewer.ui.widget.CheckInWidget
+import io.github.daisukikaffuchino.han1meviewer.worker.AppUpdateWorkState
+import io.github.daisukikaffuchino.han1meviewer.worker.AppUpdateWorker
 import io.github.daisukikaffuchino.han1meviewer.util.AppLanguageManager
 import io.github.daisukikaffuchino.utils.ActivityManager
 import io.github.daisukikaffuchino.utils.folderSize
+import io.github.daisukikaffuchino.utils.LogUtil
 import io.github.daisukikaffuchino.utils.SonnerToast
+import io.github.daisukikaffuchino.utils.installUpdateApk
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -96,6 +104,31 @@ fun HomeSettingsRouteScreen(
     var showLauncherPicker by remember { mutableStateOf(false) }
     var showApplyDeepLinksDialog by remember { mutableStateOf(false) }
     var pendingImportUri by remember { mutableStateOf<android.net.Uri?>(null) }
+
+    // ---- 「关于」页的手动检查更新 ------------------------------------------
+    // 检查结果与下载状态分开存：检查是**事件型**（跑一次给一个结果），
+    // 下载是**周期型**（Worker 不断上报进度），两者不能互相覆盖。
+    var updateCheckState by remember {
+        mutableStateOf<AboutUpdateCheckState>(AboutUpdateCheckState.Idle)
+    }
+    var showUpdateCheckDialog by remember { mutableStateOf(false) }
+    var updateWorkState by remember { mutableStateOf<AppUpdateWorkState>(AppUpdateWorkState.Idle) }
+
+    LaunchedEffect(Unit) {
+        AppUpdateWorker.observe(context.applicationContext).collect { updateWorkState = it }
+    }
+
+    val updateActionState = when (val workState = updateWorkState) {
+        is AppUpdateWorkState.Idle -> AppUpdateActionState.Idle
+        // Pending = 已入队但还没拿到第一个进度值 → 走「不确定」进度条
+        is AppUpdateWorkState.Pending -> AppUpdateActionState.Downloading(null)
+        is AppUpdateWorkState.Running -> AppUpdateActionState.Downloading(
+            workState.progress,
+            workState.bytes,
+        )
+        is AppUpdateWorkState.Finished -> AppUpdateActionState.ReadyToInstall
+        is AppUpdateWorkState.Failed -> AppUpdateActionState.Failed(workState.message)
+    }
 
     val exportLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/json")
@@ -245,13 +278,21 @@ fun HomeSettingsRouteScreen(
             generateClearCacheSummary(context, context.cacheDir?.folderSize ?: 0L).toString()
         }
     }
+    val updateCheckSummary = when (val checkState = updateCheckState) {
+        is AboutUpdateCheckState.Idle -> stringResource(R.string.check_update_summary_idle)
+        is AboutUpdateCheckState.Checking -> stringResource(R.string.checking_for_updates)
+        is AboutUpdateCheckState.Failed -> stringResource(R.string.check_update_summary_failed)
+        is AboutUpdateCheckState.Done -> checkState.result.updateInfo
+            ?.let { stringResource(R.string.check_update_summary_available, it.versionName) }
+            ?: stringResource(R.string.check_update_summary_latest)
+    }
     val uiState = remember(settings, cacheSummary, launcherItems, context) {
         buildHomeSettingsUiState(
             context = context,
             launcherItems = launcherItems,
             cacheSummary = cacheSummary,
         )
-    }
+    }.copy(updateCheckSummary = updateCheckSummary)
 
     HomeSettingsScreen(
         page = page,
@@ -437,7 +478,58 @@ fun HomeSettingsRouteScreen(
         },
         onSubmitBug = { uriHandler.openUri(HA1_GITHUB_ISSUE_URL) },
         onOpenForum = { uriHandler.openUri(HA1_GITHUB_FORUM_URL) },
+        onCheckUpdate = {
+            if (updateCheckState is AboutUpdateCheckState.Checking) return@HomeSettingsScreen
+            updateCheckState = AboutUpdateCheckState.Checking
+            coroutineScope.launch {
+                val outcome = runCatching { AppUpdateChecker.checkForUpdate() }
+                updateCheckState = outcome.fold(
+                    onSuccess = { AboutUpdateCheckState.Done(it) },
+                    onFailure = { error ->
+                        LogUtil.e(LOG_TAG, "检查更新失败", error)
+                        AboutUpdateCheckState.Failed(
+                            error.message ?: error.javaClass.simpleName
+                        )
+                    },
+                )
+                showUpdateCheckDialog = true
+            }
+        },
     )
+
+    val checkedResult = (updateCheckState as? AboutUpdateCheckState.Done)?.result
+    if (showUpdateCheckDialog && checkedResult != null) {
+        AppUpdateCheckDialog(
+            result = checkedResult,
+            actionState = updateActionState,
+            onDismiss = { showUpdateCheckDialog = false },
+            onUpdateClick = {
+                when (val workState = updateWorkState) {
+                    // 已经下好了 → 直接装（授权被拒过的话就是在这里重试）
+                    is AppUpdateWorkState.Finished -> {
+                        if (!activity.installUpdateApk(workState.apkFile)) {
+                            SonnerToast.error(R.string.update_install_permission_required)
+                        }
+                    }
+
+                    // 下载中：按钮此时是禁用的，这里兜底
+                    is AppUpdateWorkState.Pending, is AppUpdateWorkState.Running -> Unit
+
+                    // 未开始或上次失败 → 走应用内下载（与首页共用同一个 Worker）
+                    else -> checkedResult.updateInfo?.let { info ->
+                        AppUpdateWorker.enqueue(
+                            context.applicationContext,
+                            info.downloadUrl,
+                            info.versionCode,
+                        )
+                    }
+                }
+            },
+            onOpenUpstream = {
+                checkedResult.upstream?.let { uriHandler.openUri(it.releasePageUrl) }
+            },
+        )
+    }
 
     ConfirmDialog(
         visible = pendingImportUri != null,
@@ -584,6 +676,26 @@ fun HomeSettingsRouteScreen(
             }
         }
     }
+}
+
+private const val LOG_TAG = "HomeSettingsRoute"
+
+/**
+ * 「关于」页手动检查更新的状态机。
+ *
+ * 只描述**检查**这一件事；下载/安装进度由 [AppUpdateWorkState] 单独承载
+ * （两者生命周期完全不同，见 `HomeSettingsRouteScreen` 里的注释）。
+ */
+private sealed interface AboutUpdateCheckState {
+    /** 还没检查过（或页面刚重建）。 */
+    data object Idle : AboutUpdateCheckState
+
+    data object Checking : AboutUpdateCheckState
+
+    data class Done(val result: AppUpdateCheckResult) : AboutUpdateCheckState
+
+    /** 连本仓库的 `update.json` 都没读到 —— 罕见的兜底分支。 */
+    data class Failed(val message: String?) : AboutUpdateCheckState
 }
 
 private data class LauncherItem(

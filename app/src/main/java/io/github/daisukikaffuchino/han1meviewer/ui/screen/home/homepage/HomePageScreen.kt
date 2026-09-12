@@ -137,7 +137,7 @@ fun HomePageScreen(
         // Pending = 已入队但还没拿到第一个进度值 → 走「不确定」进度条
         is HomePageViewModel.UpdateDownloadState.Pending -> AppUpdateActionState.Downloading(null)
         is HomePageViewModel.UpdateDownloadState.Downloading ->
-            AppUpdateActionState.Downloading(s.progress)
+            AppUpdateActionState.Downloading(s.progress, s.bytes)
 
         is HomePageViewModel.UpdateDownloadState.ReadyToInstall -> AppUpdateActionState.ReadyToInstall
         is HomePageViewModel.UpdateDownloadState.Failed -> AppUpdateActionState.Failed(s.message)

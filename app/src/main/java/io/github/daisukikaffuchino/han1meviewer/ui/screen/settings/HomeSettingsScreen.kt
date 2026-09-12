@@ -106,6 +106,7 @@ fun HomeSettingsScreen(
     onImportOnlineLists: () -> Unit,
     onSubmitBug: () -> Unit,
     onOpenForum: () -> Unit,
+    onCheckUpdate: () -> Unit,
 ) {
     var activeDialog by rememberSaveable { mutableStateOf<HomeSettingsChoiceDialog?>(null) }
     var showSearchGridColumnsDialog by rememberSaveable { mutableStateOf(false) }
@@ -557,6 +558,12 @@ fun HomeSettingsScreen(
                             iconRes = R.drawable.ic_info,
                         )
                         SettingNavigationItem(
+                            title = stringResource(R.string.check_for_updates),
+                            summary = state.updateCheckSummary,
+                            iconRes = R.drawable.ic_security_update,
+                            onClick = onCheckUpdate,
+                        )
+                        SettingNavigationItem(
                             title = stringResource(R.string.developer),
                             summary = "@$SECONDARY_DEVELOPER_HANDLE",
                             iconRes = R.drawable.ic_person,
@@ -674,6 +681,7 @@ private fun HomeSettingsScreenPreview() {
             onImportOnlineLists = {},
             onSubmitBug = {},
             onOpenForum = {},
+            onCheckUpdate = {},
         )
     }
 }
@@ -717,4 +725,5 @@ private fun previewHomeSettingsState() = HomeSettingsUiState(
     useAvHomeCategoryTitles = false,
     alwaysShowUpdateCard = false,
     displayDensityPercent = 100,
+    updateCheckSummary = "Up to date",
 )

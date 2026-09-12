@@ -31,6 +31,7 @@ import androidx.compose.ui.unit.dp
 import io.github.daisukikaffuchino.han1meviewer.R
 import io.github.daisukikaffuchino.han1meviewer.logic.AppUpdateInfo
 import io.github.daisukikaffuchino.han1meviewer.ui.preview.ComponentPreview
+import io.github.daisukikaffuchino.utils.formatFileSize
 
 /**
  * 更新卡片的动作状态。
@@ -41,8 +42,14 @@ import io.github.daisukikaffuchino.han1meviewer.ui.preview.ComponentPreview
 sealed interface AppUpdateActionState {
     data object Idle : AppUpdateActionState
 
-    /** 正在下载。`progress` 为 null 表示还没拿到 Content-Length，进度条走「不确定」样式 */
-    data class Downloading(val progress: Int?) : AppUpdateActionState
+    /**
+     * 正在下载。
+     *
+     * @param progress 0..100；`null` 表示还没拿到 `Content-Length`，进度条走「不确定」样式。
+     * @param bytes 已下载字节数。**这个字段的存在就是为了回答「到底在下不下」** ——
+     *   没有总大小时进度条不会走，但字节数一直在涨，所以文案里必须把它显示出来。
+     */
+    data class Downloading(val progress: Int?, val bytes: Long = 0L) : AppUpdateActionState
 
     /** 包已下载好，点一下就能装 */
     data object ReadyToInstall : AppUpdateActionState
@@ -58,6 +65,14 @@ fun AppUpdateCard(
     onIgnoreClick: () -> Unit,
     modifier: Modifier = Modifier,
     actionState: AppUpdateActionState = AppUpdateActionState.Idle,
+    /**
+     * 是否显示「忽略本次更新」。
+     *
+     * 首页要（用户可能不想被反复打扰），但嵌在「关于」页的检查更新弹窗里不要 ——
+     * 那个弹窗是一次性的手动操作结果，误触「忽略」会写进持久化设置，
+     * 让首页以后也不再提示，语义太重。
+     */
+    showIgnoreButton: Boolean = true,
 ) {
     OutlinedCard(
         modifier = modifier
@@ -134,9 +149,15 @@ fun AppUpdateCard(
                                 modifier = Modifier.fillMaxWidth(),
                             )
                         }
+                        // ⚠️ 文案里**必须**带上已下载字节数。没有总大小时进度条是不动的，
+                        // 只写「正在下载…」和「卡死了」在视觉上完全一样；
+                        // 而字节数一直在跳，用户一眼能看出「在下，只是不知道总量」。
                         Text(
                             text = if (progress == null) {
-                                stringResource(R.string.downloading_update)
+                                stringResource(
+                                    R.string.downloading_update_bytes,
+                                    actionState.bytes.formatFileSize(),
+                                )
                             } else {
                                 stringResource(R.string.downloading_update_percent, progress)
                             },
@@ -163,7 +184,9 @@ fun AppUpdateCard(
                 horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                if (!updateInfo.forceUpdate && actionState !is AppUpdateActionState.Downloading) {
+                if (showIgnoreButton && !updateInfo.forceUpdate &&
+                    actionState !is AppUpdateActionState.Downloading
+                ) {
                     TextButton(onClick = onIgnoreClick) {
                         Text(stringResource(R.string.ignore_this_update))
                     }

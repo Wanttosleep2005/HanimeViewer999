@@ -88,7 +88,15 @@ object ServiceCreator {
      */
     private fun buildDownloadClient(): OkHttpClient {
         return OkHttpClient.Builder()
-            .connectTimeout(5, TimeUnit.SECONDS)
+            // 5 s → 15 s：这个值的语义是「建立连接」的上限。走代理时多了一跳
+            // （握手 + SOCKS5 认证协商），弱网下 5 s 经常不够 —— 表现为还没开始下
+            // 就报连接失败，用户看到的就是「网络连接中断」。与 hClient 对齐成 15 s。
+            .connectTimeout(15, TimeUnit.SECONDS)
+            // ⚠️ 必须显式给 readTimeout。不给的话是 OkHttp 默认的 10 s，
+            // 而它的语义是「两次数据到达之间的最大间隔」：直链下载在 30–40 KB/s 的弱网
+            // 出口下，一次网络抖动就可能超过 10 s，于是「明明能下完」被判定断流。
+            // 30 s 与 HLS 下载链路（hlsClient）保持一致。
+            .readTimeout(30, TimeUnit.SECONDS)
             .protocols(listOf(Protocol.HTTP_1_1))
             .addInterceptor(UserAgentInterceptor)
             .addInterceptor(downloadSpeedLimitInterceptor)

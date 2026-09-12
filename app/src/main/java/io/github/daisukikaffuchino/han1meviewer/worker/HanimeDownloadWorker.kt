@@ -500,6 +500,13 @@ class HanimeDownloadWorker(
                     response = ServiceCreator.downloadClient.newCall(request).await()
                     val canWrite = (requestNeedRange && response.code == 206) || (!requestNeedRange && response.isSuccessful)
                     if (!canWrite) {
+                        // 5xx / 408 / 429 是暂时性故障 → 交给外层统一的 retry 分支；
+                        // 4xx（403 防盗链、404 地址失效…）重试无意义，直接判死并把状态码报出来。
+                        if (response.code.isRetryableHttpStatus() &&
+                            runAttemptCount < MAX_WORK_RETRY_COUNT
+                        ) {
+                            throw HttpStatusException(response.code, "HTTP ${response.code}")
+                        }
                         val reason = response.toDownloadErrorMessage(requestNeedRange)
                         showFailureNotification(reason)
                         mainScope.launch {
@@ -804,7 +811,10 @@ class HanimeDownloadWorker(
             .apply { downloadHeaders.forEach { (name, value) -> header(name, value) } }
             .build()
         hlsClient.newCall(request).await().use { response ->
-            if (!response.isSuccessful) throw IOException("HTTP ${response.code}")
+            // 带上状态码：403（防盗链）/ 404（地址失效）要能被识别成「重试也没用」
+            if (!response.isSuccessful) {
+                throw HttpStatusException(response.code, "HTTP ${response.code}")
+            }
             return response.body.string()
         }
     }
@@ -865,13 +875,20 @@ class HanimeDownloadWorker(
                 throw e
             } catch (e: Exception) {
                 lastError = e
+                // 4xx 是「这个请求本身就不被接受」，同一片再发两次也不会变 ——
+                // 立刻把状态码抛上去，别把 3 次重试和 3 次 WorkManager 重跑都耗在它身上。
+                if (e is HttpStatusException && !e.isRetryableNetworkError()) throw e
                 if (attempt < HLS_SEGMENT_RETRY - 1) {
                     LogUtil.w(TAG, "HLS 分片第 ${attempt + 1} 次失败，准备重试：$url", e)
                     delay(300L * (attempt + 1))
                 }
             }
         }
-        throw IOException("HLS 分片下载失败：$url", lastError)
+        // ⚠️ 这里**不能**包成裸 IOException：那会把状态码吃掉，
+        // 上层就分不出「可重试的网络抖动」和「403 防盗链」，文案也只能退回泛泛的「网络中断」。
+        val error = lastError
+        if (error is HttpStatusException) throw error
+        throw IOException("HLS 分片下载失败：$url", error)
     }
 
     private suspend fun streamHlsSegment(url: String, sink: HlsSink): Long {
@@ -881,7 +898,9 @@ class HanimeDownloadWorker(
                 .apply { downloadHeaders.forEach { (name, value) -> header(name, value) } }
                 .build()
             hlsClient.newCall(request).execute().use { response ->
-                if (!response.isSuccessful) throw IOException("HTTP ${response.code}")
+                if (!response.isSuccessful) {
+                    throw HttpStatusException(response.code, "HTTP ${response.code}")
+                }
                 response.body.byteStream().use { input ->
                     val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
                     var written = 0L
@@ -962,6 +981,18 @@ class HanimeDownloadWorker(
 
     //</editor-fold>
 
+    /**
+     * 带 HTTP 状态码的下载异常。
+     *
+     * 为什么需要它：以前这里只抛 `IOException("HTTP 403")`，于是
+     * 1) [isRetryableNetworkError] 把所有 `IOException` 都判成「可重试」→ 白白重试 3 遍；
+     * 2) [toDownloadErrorMessage] 匹配不到任何特征 → 统一报「网络连接中断，请检查网络后稍等自动重试」。
+     * 结果就是 403 被说成网络抖动，还把「稍后自动继续」当承诺 —— 而 4xx 重试多少次结果都一样，
+     * 用户看到的就成了「一直卡在 0 B/0 B，说会自动继续却永远不动」。
+     * 带上状态码之后，重试决策和文案都能按真实原因走。
+     */
+    private class HttpStatusException(val code: Int, message: String) : IOException(message)
+
     private fun IOException.isStreamResetCancel(): Boolean {
         return message?.contains("stream was reset: CANCEL", ignoreCase = true) == true
     }
@@ -970,7 +1001,21 @@ class HanimeDownloadWorker(
         return isStopped && this is IOException && message.equals("Canceled", ignoreCase = true)
     }
 
+    /**
+     * 这个异常值不值得再重试一次（无论是分片级还是整任务级）。
+     *
+     * ⚠️ 原实现最后一条是「**任何** `IOException` 都算可重试」。那会把 4xx 客户端错误
+     * 一起算进来 —— 403 防盗链、404 地址失效、416 区间不合法，重试一百遍结果都一样，
+     * 却让任务老老实实重试 3 遍、每次弹一条「稍后会自动继续」。
+     * 用户看到的就是「一直卡在 0 B/0 B，说会自动继续却永远不动」。
+     *
+     * 所以：4xx 里只有 408（请求超时）和 429（限流）值得重试，5xx 是服务端抖动，也值得。
+     */
+    /** 5xx 是服务端抖动、408 是请求超时、429 是限流，这三种重试有意义；其余 4xx 没有。 */
+    private fun Int.isRetryableHttpStatus(): Boolean = this >= 500 || this == 408 || this == 429
+
     private fun Exception.isRetryableNetworkError(): Boolean {
+        if (this is HttpStatusException) return code.isRetryableHttpStatus()
         return this is UnknownHostException ||
                 this is SocketTimeoutException ||
                 this is ConnectException ||
@@ -978,8 +1023,16 @@ class HanimeDownloadWorker(
                 (this is IOException && message.equals("Canceled", ignoreCase = true).not())
     }
 
+    /**
+     * 把异常翻译成**用户能据此行动**的中文原因。
+     *
+     * 顺序很重要：`HttpStatusException` 必须排在 `is IOException` 前面，
+     * 否则会被那条泛化的 `download_error_network`（「网络连接中断，请检查网络后稍等自动重试」）
+     * 吃掉 —— 403 被说成网络抖动，正是这次要修的毛病。
+     */
     private fun Exception.toDownloadErrorMessage(): String {
         return when (this) {
+            is HttpStatusException -> httpStatusMessage(code)
             is UnknownHostException -> context.getString(R.string.download_error_dns)
             is SocketTimeoutException -> context.getString(R.string.download_error_timeout)
             is ConnectException -> context.getString(R.string.download_error_connect)
@@ -1003,13 +1056,32 @@ class HanimeDownloadWorker(
         }
     }
 
+    /**
+     * HTTP 状态码 → 中文原因。
+     *
+     * 403 / 404 单列出来，因为它们**指向完全不同的处置动作**：
+     * 403 是防盗链（多半是 Referer / UA 没带上，或 Cloudflare 拦了 IP），
+     * 404 是地址失效（得删掉任务重新取地址）。
+     * 以前这两种都落进 `requestNeedRange` 那条兜底分支，被统一说成
+     * 「服务器不支持从断点位置继续下载」—— 和真实原因毫无关系。
+     */
+    private fun httpStatusMessage(code: Int): String = when {
+        code == 401 || code == 403 -> context.getString(R.string.download_error_forbidden, code)
+        code == 404 || code == 410 -> context.getString(R.string.download_error_not_found, code)
+        code == 416 -> context.getString(R.string.download_error_range_not_supported)
+        code in 500..599 -> context.getString(R.string.download_error_network)
+        // 其余 4xx（400/405/451…）：如实报状态码，好过编一句「网络中断」
+        code in 400..499 -> context.getString(R.string.download_error_http_status, code)
+        else -> context.getString(R.string.download_error_network)
+    }
+
     private fun Response.toDownloadErrorMessage(requestNeedRange: Boolean): String {
+        // ⚠️ 先按状态码判，再谈 Range。
+        // 反过来写（原来的写法）会让任何「带 Range 的失败」都被说成
+        // 「服务器不支持从断点位置继续下载」，403 / 404 都被掩盖掉。
+        if (code in 400..599) return httpStatusMessage(code)
         return when {
-            requestNeedRange && code == 416 -> {
-                context.getString(R.string.download_error_range_not_supported)
-            }
             requestNeedRange -> context.getString(R.string.download_error_range_not_supported)
-            code in 500..599 -> context.getString(R.string.download_error_network)
             else -> message.takeIf { it.isNotBlank() } ?: context.getString(R.string.unknown_download_error)
         }
     }

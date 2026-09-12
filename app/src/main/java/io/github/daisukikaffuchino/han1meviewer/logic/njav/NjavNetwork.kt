@@ -85,12 +85,20 @@ object NjavNetwork {
         return BASE_URL + value.trimStart('/')
     }
 
+    /** 需要防盗链头的域名，与 [NjavPlaybackInterceptor] 的 `HEADER_HOSTS` 保持一致。 */
+    private val PROTECTED_HOSTS = listOf("surrit.com", "fourhoi.com")
+
     /**
-     * surrit.com 有防盗链：不带 Referer 直接 403（Cloudflare）。播放器要把
-     * 这组头透传给播放引擎（含 HLS 的分片请求），否则会「能解析出地址但播不了」。
+     * nJAV 的视频 CDN 有防盗链：不带 Referer 直接 403（Cloudflare）。
+     * 播放器（含 HLS 的每个分片）与**下载 Worker** 都要把这组头带上，
+     * 否则会「能解析出地址但播不了 / 一片也下不动」。
+     *
+     * ⚠️ 别只判 `surrit.com`：`fourhoi.com` 是同一套防盗链下的另一个域名，
+     * 判漏了就会在换域名时变成「清一色 403」——而 403 的表现恰好是
+     * 「有地址、有分片数，但一个字节都下不来」。
      */
     fun playbackHeadersFor(url: String): Map<String, String> =
-        if (url.contains("surrit.com", ignoreCase = true)) {
+        if (PROTECTED_HOSTS.any { url.contains(it, ignoreCase = true) }) {
             mapOf("Referer" to REFERER, "Origin" to ORIGIN)
         } else {
             emptyMap()

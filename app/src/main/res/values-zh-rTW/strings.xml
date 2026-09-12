@@ -681,6 +681,7 @@
     <string name="update_downloading_short">下載中…</string>
     <string name="downloading_update">正在下載更新…</string>
     <string name="downloading_update_percent">正在下載更新… %1$d%%</string>
+    <string name="downloading_update_bytes">正在下載更新… 已下載 %1$s</string>
     <string name="update_install_now">立即安裝</string>
     <string name="update_download_failed">更新包下載失敗，請重試</string>
     <string name="update_install_permission_required">請先允許本應用程式安裝未知來源應用程式，然後再次點擊「立即安裝」</string>
@@ -771,4 +772,21 @@
         <item>搓手手期待到手指都冒煙啦……</item>
         <item>◝(⑅•ᴗ•⑅)◜..°♡ 正在把這份可愛傳送給你，請簽收~</item>
     </string-array>
+    <!-- 關於頁：檢查更新 -->
+    <string name="check_for_updates">檢查更新</string>
+    <string name="check_update_summary_idle">點擊檢查是否有新版本</string>
+    <string name="check_update_summary_available">發現新版本 %1$s</string>
+    <string name="check_update_summary_latest">已是最新版本</string>
+    <string name="check_update_summary_failed">檢查更新失敗</string>
+    <string name="update_check_current_version">目前版本：%1$s（%2$d）</string>
+    <string name="update_check_build_up_to_date">目前建置已是最新版本。</string>
+    <string name="update_check_upstream_latest">上游最新版本：%1$s</string>
+    <string name="update_check_upstream_newer">上游已有新版本（%1$s）。上游套件與本建置簽章不同，無法直接覆蓋安裝，建議手動合併到 mod 分支。</string>
+    <string name="update_check_upstream_failed">上游版本查詢失敗：%1$s</string>
+    <string name="open_release_page">開啟發佈頁</string>
+    <!-- 下載列表：總大小還沒探測出來（例如 HLS 抽樣估算失敗） -->
+    <string name="download_progress_size_unknown">%1$s / 大小未知</string>
+    <string name="download_error_forbidden">伺服器拒絕下載請求（HTTP %1$d），該位址可能有防盜鏈檢查，或需要登入狀態。</string>
+    <string name="download_error_not_found">下載位址已失效（HTTP %1$d），請刪除該任務後重新取得位址。</string>
+    <string name="download_error_http_status">下載請求被伺服器拒絕（HTTP %1$d）。</string>
 </resources>

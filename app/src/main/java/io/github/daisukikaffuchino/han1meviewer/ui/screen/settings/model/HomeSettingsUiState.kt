@@ -43,4 +43,11 @@ data class HomeSettingsUiState(
     val useAvHomeCategoryTitles: Boolean,
     val alwaysShowUpdateCard: Boolean,
     val displayDensityPercent: Int,
+    /**
+     * 关于页「检查更新」那一行右侧的说明文字。
+     *
+     * 由界面层实时计算后 [copy] 进来（不进 [buildHomeSettingsUiState]），
+     * 因为它依赖一次网络检查的结果，和设置项不是同一类数据。
+     */
+    val updateCheckSummary: String = "",
 )

@@ -61,9 +61,12 @@ class HDns : Dns {
          */
         private val javIpsByHost: Map<String, List<String>> = mapOf(
             "njavtv.com" to listOf("104.26.7.251", "104.26.6.251", "172.67.70.97"),
-            // 视频源（surrit.com）目前系统解析正常（Cloudflare 真实 IP），
-            // 但它是播放链路的关键域名，一并兜底，避免哪天被投毒后「能解析地址却播不了」。
-            "surrit.com" to listOf("104.18.53.139", "104.18.49.25"),
+            // 视频源（surrit.com）：系统解析本来是对的（Cloudflare 真实 IP），内置一份是为了
+            // 「哪天被投毒了也不至于能解析地址却播不了」。
+            // ⚠️ 2026-09-12 复核：doh.pub 给的是 `104.18.53.139` + `104.18.49.25`，
+            // 其中 `104.18.49.25` **已经连不上了**（connect 超时），所以只保留可用的那个；
+            // 万一它也失效，[lookupBuiltInJav] 的系统 DNS 尾巴会接手。
+            "surrit.com" to listOf("104.18.53.139"),
         )
 
         /**
@@ -151,15 +154,23 @@ class HDns : Dns {
 
     /**
      * nJAV 系域名的内置 IP 解析；域名不在表里就返回 null（交回上层走常规流程）。
+     *
+     * ⚠️ **内置 IP 后面要接上系统 DNS 的结果**。内置表是「防投毒」用的，但它同时
+     * 切断了「表过期时的退路」：OkHttp 只看本函数返回的地址，内置 IP 全连不上不会
+     * 自动改问系统 DNS。`surrit.com` 就已经出现过一半 IP 失效（见 [javIpsByHost]）。
+     * 追加在尾部，正常路径仍然只走内置 IP，代价是「多绕一次」而不是「彻底不通」。
      */
     private fun lookupBuiltInJav(hostname: String): List<InetAddress>? {
         val ips = javIpsByHost[hostname.lowercase()] ?: return null
-        val resolved = ips.mapNotNull { ip ->
+        val pinned = ips.mapNotNull { ip ->
             runCatching {
                 InetAddress.getByAddress(hostname, InetAddress.getByName(ip).address)
             }.getOrNull()
         }
-        return resolved.takeIf { it.isNotEmpty() }
+        // njavtv.com 的系统 DNS 是被投毒的，所以系统结果只能放尾巴上，
+        // 绝不能排在前面 —— 排前面就等于把投毒结果当首选。
+        val system = runCatching { Dns.SYSTEM.lookup(hostname) }.getOrDefault(emptyList())
+        return (pinned + system).distinctBy { it.hostAddress }.takeIf { it.isNotEmpty() }
     }
 
     private fun lookupByDoH(dohUrl: String, hostname: String): List<InetAddress> {

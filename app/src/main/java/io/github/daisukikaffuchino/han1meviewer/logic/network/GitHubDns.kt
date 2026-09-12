@@ -60,18 +60,51 @@ object GitHubDns : Dns {
         "release-assets.githubusercontent.com" to githubusercontentIps,
         "objects.githubusercontent.com" to githubusercontentIps,
         "raw.githubusercontent.com" to githubusercontentIps,
-        // jsDelivr 是「检查更新」的首选源（GitHub 内容加速）。它的解析同样可能被污染 ——
-        // 实测 2026-09-11 本机直连 `cdn.jsdelivr.net` 会 25 s 超时，走代理才 200。
-        // 兜底一组实测可用的 Cloudflare 地址，避免「检查更新」这条腿也瘸掉。
-        "cdn.jsdelivr.net" to listOf("104.17.208.5", "104.17.207.5"),
+        // jsDelivr 是「检查更新」的首选源（GitHub 内容加速）。
+        //
+        // ⚠️ **这组 IP 曾经钉错过，而且代价很隐蔽**：早期钉的是 Cloudflare 段的
+        // `104.17.208.5` / `104.17.207.5`，到 2026-09-12 实测**两个都连不上**
+        // （connect 直接超时），而 jsDelivr 早已换到 Fastly 段 —— 系统 DNS 解析
+        // `cdn.jsdelivr.net` 得到的是 `151.101.x.x`，访问正常。
+        //
+        // 后果不是「检查更新失败」，而是**每次都先白等一个 connectTimeout（15 s）**
+        // 才回退到 raw 那条源。因为 [lookup] 一旦返回内置 IP，OkHttp 就不会再问系统 DNS，
+        // 内置 IP 全不通 = 这个域名在这台设备上彻底不可用。
+        //
+        // 下面这组是 Fastly 为 jsDelivr 提供服务的共享 anycast 段（实测可连）。
+        // 但仍然可能再过期 —— 真正的保护是 [lookup] 里的系统 DNS 兜底尾巴。
+        "cdn.jsdelivr.net" to listOf(
+            "151.101.1.229",
+            "151.101.65.229",
+            "151.101.129.229",
+            "151.101.193.229",
+        ),
     )
 
+    /**
+     * 解析域名。
+     *
+     * ⚠️ **内置 IP 后面一定要接上系统 DNS 的结果**（去重后追加），不能只返回内置表。
+     *
+     * 原因是 OkHttp 只看 [Dns.lookup] 的返回值：内置 IP 一旦过期，OkHttp **不会**
+     * 回头去问系统 DNS，于是「钉 IP」这个保护措施会反噬成「这个域名永远连不上」。
+     * 上面那个 jsDelivr 的坑就是这么来的 —— 而且是静默的，只在每次检查更新时
+     * 多花 15 s，看起来就像「检查更新很慢/有问题」。
+     *
+     * 追加在**尾部**：正常路径仍然走内置 IP（这才是抗投毒的意义），
+     * 只有当它们全部连不上时，OkHttp 的 RouteSelector 才会继续尝试系统解析的地址。
+     * 代价是「多绕一次」，而不是「彻底不可用」。
+     */
     override fun lookup(hostname: String): List<InetAddress> {
         val candidates = ipsByHost[hostname.lowercase()] ?: return Dns.SYSTEM.lookup(hostname)
-        val resolved = candidates.mapNotNull { ip ->
+        val pinned = candidates.mapNotNull { ip ->
             runCatching { InetAddress.getByName(ip) }.getOrNull()
         }
-        // 内置表全部解析失败时退回家系统 DNS，至少不把请求彻底堵死
-        return resolved.ifEmpty { Dns.SYSTEM.lookup(hostname) }
+        val system = runCatching { Dns.SYSTEM.lookup(hostname) }
+            .getOrDefault(emptyList())
+
+        val merged = (pinned + system).distinctBy { it.hostAddress }
+        // 内置表全部解析失败、系统 DNS 也拿不到时，好歹别把请求彻底堵死
+        return merged.ifEmpty { runCatching { Dns.SYSTEM.lookup(hostname) }.getOrDefault(emptyList()) }
     }
 }

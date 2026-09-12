@@ -41,6 +41,21 @@ import java.util.concurrent.TimeUnit
  *    （此前这里是裸 OkHttpClient，代理配置被完全忽略，见下）；
  * 2. 官方源失败就依次回退到 GitHub 加速镜像。
  */
+/**
+ * 更新包下载进度。
+ *
+ * 为什么**一定要带上字节数**：`percent` 只有在服务端给出 `Content-Length` 时才算得出来，
+ * 走分块传输（或某些加速镜像）时永远是 null。那时如果只上报百分比，界面就只剩一条
+ * 不动的进度条 —— 用户无法区分「在下」和「卡死」，这正是「不知道在下不下」的来源。
+ * [bytes] 哪怕没有百分比也一直在涨，是「真的在下」的硬证据。
+ */
+data class DownloadProgress(
+    /** 0..100；算不出来时是 null（不知道总大小）。 */
+    val percent: Int?,
+    /** 已落盘字节数。 */
+    val bytes: Long,
+)
+
 object AppUpdateDownloader {
 
     private const val TAG = "AppUpdateDownloader"
@@ -93,6 +108,15 @@ object AppUpdateDownloader {
      */
     private const val ATTEMPTS_PER_SOURCE = 2
 
+    /**
+     * 进度上报的最小间隔（毫秒）。
+     *
+     * 每收一块数据就回调一次太密：`AppUpdateWorker` 每次都会 `setProgress`（写 WorkManager
+     * 的数据库）并 `NotificationManager.notify`，一秒几十次纯属浪费。500 ms 既能让进度条
+     * 看起来是连续在走，又不会把主线程压满。
+     */
+    private const val PROGRESS_INTERVAL_MS = 500L
+
     fun updateApkFile(): File = File(applicationContext.cacheDir, APK_NAME)
 
     /** 已下载好的更新包（存在且非空）才返回，否则 null。 */
@@ -135,11 +159,18 @@ object AppUpdateDownloader {
     /**
      * 下载更新包到 [updateApkFile]，依次尝试官方源与各镜像，第一个成功即返回。
      *
-     * @param onProgress 0..100。服务端未给出 `Content-Length`（分块传输）时**不会**回调 ——
-     *   此时换算不出百分比，宁可不动也不要谎报一个 0%。换源成功开始读取时会把进度重置为 0。
+     * @param onProgress 进度回调。**开工时（还没收到任何数据）就会先回调一次**
+     *   `DownloadProgress(percent = null, bytes = 已有字节数)` —— 这是刻意为之：
+     *   否则「服务端迟迟不给 `Content-Length`」和「请求根本没发出去」在界面上长得一模一样，
+     *   用户看到的就是「点了更新之后什么都没发生，不知道在下不下」。
+     *   `percent` 只有在服务端给出 `Content-Length` 时才算得出来，算不出来就是 null；
+     *   此时界面靠 `bytes` 一直在涨来判断「真的在下」。
      * @return 下载完成的 APK 文件
      */
-    suspend fun download(url: String, onProgress: (suspend (Int) -> Unit)? = null): File =
+    suspend fun download(
+        url: String,
+        onProgress: (suspend (DownloadProgress) -> Unit)? = null,
+    ): File =
         withContext(Dispatchers.IO) {
             val candidates = candidateUrls(url)
             var lastError: Throwable? = null
@@ -148,7 +179,7 @@ object AppUpdateDownloader {
                 if (index > 0) {
                     // 换源：不同源的字节未必一致，半截文件不能续，清掉重来
                     runCatching { updateApkFile().delete() }
-                    onProgress?.invoke(0)
+                    onProgress?.invoke(DownloadProgress(percent = null, bytes = 0L))
                 }
 
                 repeat(ATTEMPTS_PER_SOURCE) { attempt ->
@@ -181,13 +212,18 @@ object AppUpdateDownloader {
     /** 从**单个**源下载（支持断点续传）。任何异常都向上抛，由 [download] 决定重试或换源。 */
     private suspend fun downloadFrom(
         url: String,
-        onProgress: (suspend (Int) -> Unit)?,
+        onProgress: (suspend (DownloadProgress) -> Unit)?,
     ): File {
         val file = updateApkFile()
         file.parentFile?.mkdirs()
 
         // 断点续传：同源上一次下了一半就断了的话，从断点接着下（详见 ATTEMPTS_PER_SOURCE）
         val alreadyBytes = file.takeIf { it.isFile }?.length() ?: 0L
+
+        // ⚠️ 开工先上报一次。此刻一个字节都还没到，但「已开始」这件事必须让界面知道 ——
+        // 否则从点按钮到第一块数据到达之间（弱网下可能十几秒）界面毫无变化，
+        // 用户根本分不清是在下还是卡死。
+        onProgress?.invoke(DownloadProgress(percent = null, bytes = alreadyBytes))
 
         val request = Request.Builder()
             .url(url)
@@ -220,7 +256,22 @@ object AppUpdateDownloader {
                 FileOutputStream(file, resuming).use { output ->
                     val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
                     var copied = if (resuming) alreadyBytes else 0L
-                    var lastPercent = -1
+                    var lastEmitAt = 0L
+
+                    /** 有总长才算得出百分比；算不出来就给 null，交给界面按「不确定」显示。 */
+                    fun progressOf() = if (total > 0) {
+                        DownloadProgress(
+                            percent = ((copied * 100) / total).toInt().coerceIn(0, 100),
+                            bytes = copied,
+                        )
+                    } else {
+                        DownloadProgress(percent = null, bytes = copied)
+                    }
+
+                    // 拿到了响应头即刻再报一次：这时已经知道总大小了，能把「不确定进度条」
+                    // 换成带百分比的确定进度条（哪怕字节数还是 0）。
+                    onProgress?.invoke(progressOf())
+
                     while (true) {
                         // 用户取消下载时能及时退出，不会留下半截文件继续写
                         currentCoroutineContext().ensureActive()
@@ -228,14 +279,15 @@ object AppUpdateDownloader {
                         if (read == -1) break
                         output.write(buffer, 0, read)
                         copied += read
-                        if (total > 0) {
-                            val percent = ((copied * 100) / total).toInt().coerceIn(0, 100)
-                            if (percent != lastPercent) {
-                                lastPercent = percent
-                                onProgress?.invoke(percent)
-                            }
+                        val now = System.currentTimeMillis()
+                        if (now - lastEmitAt >= PROGRESS_INTERVAL_MS) {
+                            lastEmitAt = now
+                            onProgress?.invoke(progressOf())
                         }
                     }
+
+                    // 收尾补一次终值，避免最后一截数据落在节流窗口里没上报
+                    onProgress?.invoke(progressOf())
                 }
             }
             total

@@ -58,10 +58,11 @@ class HomePageViewModel: ViewModel() {
         /** 未开始 / 已结束 */
         data object Idle : UpdateDownloadState
 
-        /** 已入队等网络，或正在跑但还没拿到百分比 */
+        /** 已入队等网络 */
         data object Pending : UpdateDownloadState
 
-        data class Downloading(val progress: Int) : UpdateDownloadState
+        /** 正在下载。`progress` 为 null = 未知总大小；`bytes` 是「确实在下」的硬证据。 */
+        data class Downloading(val progress: Int?, val bytes: Long) : UpdateDownloadState
 
         /** 包已就绪、可以安装 */
         data class ReadyToInstall(val apkFile: File) : UpdateDownloadState
@@ -114,7 +115,7 @@ class HomePageViewModel: ViewModel() {
                         is AppUpdateWorkState.Idle -> UpdateDownloadState.Idle
                         is AppUpdateWorkState.Pending -> UpdateDownloadState.Pending
                         is AppUpdateWorkState.Running ->
-                            UpdateDownloadState.Downloading(state.progress)
+                            UpdateDownloadState.Downloading(state.progress, state.bytes)
 
                         is AppUpdateWorkState.Finished -> {
                             if (state.targetVersionCode in 1..BuildConfig.VERSION_CODE) {

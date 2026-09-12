@@ -170,11 +170,22 @@ fun DownloadingItemCard(
                     }
 
                     Text(
-                        text = stringResource(
-                            R.string.download_progress_size,
-                            item.downloadedLength.formatFileSize(),
-                            item.length.formatFileSize(),
-                        ),
+                        // ⚠️ length 为 0 表示「还不知道总大小」，不是「总大小是 0 字节」。
+                        // HLS（nJAV）的长度靠抽样估算，估算失败就会停在 0 ——
+                        // 这时直接拼 "%2$s" 会显示成刺眼的「0 B/0 B」，
+                        // 看着像卡死，所以如实写「大小未知」。
+                        text = if (item.length <= 0L) {
+                            stringResource(
+                                R.string.download_progress_size_unknown,
+                                item.downloadedLength.formatFileSize(),
+                            )
+                        } else {
+                            stringResource(
+                                R.string.download_progress_size,
+                                item.downloadedLength.formatFileSize(),
+                                item.length.formatFileSize(),
+                            )
+                        },
                         maxLines = 1,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,

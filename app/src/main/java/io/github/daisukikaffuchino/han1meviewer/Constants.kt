@@ -110,11 +110,32 @@ val HANIME_LOGIN_URL: String
 const val UPSTREAM_GITHUB_URL = "https://github.com/daisukiKaffuChino/Han1meViewer"
 
 /**
+ * 上游仓库的 `owner/name`。
+ *
+ * 「检查更新」用它读上游的最新 Release，见
+ * [io.github.daisukikaffuchino.han1meviewer.logic.AppUpdateChecker]。
+ */
+const val UPSTREAM_GITHUB_REPO = "daisukiKaffuChino/Han1meViewer"
+
+/** 上游的 Release 列表页（检查到新版本时给用户一个能点开的落点）。 */
+const val UPSTREAM_GITHUB_RELEASES_URL = "https://github.com/$UPSTREAM_GITHUB_REPO/releases"
+
+/** 某个 tag 对应的发布页。 */
+fun upstreamReleasePageUrl(tag: String): String = "$UPSTREAM_GITHUB_RELEASES_URL/tag/$tag"
+
+/**
+ * 当前这个 fork（mod 线）的仓库标识 `owner/name`。
+ *
+ * ⚠️ 这个值也是**硬编码进 APK** 的，换仓库必须重新打包发版。
+ */
+const val HA1_GITHUB_REPO = "ddsmie4t2g/HanimeViewer"
+
+/**
  * 当前这个 fork（mod 线）的仓库地址 —— 「关于 → 项目仓库」「提交 bug」「论坛」都指这里。
  *
  * ⚠️ 这个 URL 是**硬编码进 APK** 的，换仓库必须重新打包发版，旧包改不掉。
  */
-const val HA1_GITHUB_URL = "https://github.com/ddsmie4t2g/HanimeViewer"
+const val HA1_GITHUB_URL = "https://github.com/$HA1_GITHUB_REPO"
 
 const val HA1_GITHUB_ISSUE_URL = "$HA1_GITHUB_URL/issues"
 

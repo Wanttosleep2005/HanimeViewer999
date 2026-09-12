@@ -710,6 +710,8 @@ Recommendations are as follows:\n
     <string name="update_downloading_short">Downloading…</string>
     <string name="downloading_update">Downloading update…</string>
     <string name="downloading_update_percent">Downloading update… %1$d%%</string>
+    <!-- 服务端未给出总大小时用这个：只报已下载字节数，靠它「一直在涨」证明下载还活着 -->
+    <string name="downloading_update_bytes">Downloading update… %1$s</string>
     <string name="update_install_now">Install now</string>
     <string name="update_download_failed">Update download failed. Please retry.</string>
     <string name="update_install_permission_required">Allow this app to install unknown apps, then tap Install again.</string>
@@ -801,4 +803,21 @@ Recommendations are as follows:\n
         <item>Rubbing my hands in excitement till they\'re smoking…</item>
         <item>◝(⑅•ᴗ•⑅)◜..°♡ Transmitting a bundle of cuteness your way—please sign for it~</item>
     </string-array>
+    <!-- About page: check for updates -->
+    <string name="check_for_updates">Check for updates</string>
+    <string name="check_update_summary_idle">Tap to check for a newer version</string>
+    <string name="check_update_summary_available">New version %1$s available</string>
+    <string name="check_update_summary_latest">Up to date</string>
+    <string name="check_update_summary_failed">Check failed</string>
+    <string name="update_check_current_version">Current version: %1$s (%2$d)</string>
+    <string name="update_check_build_up_to_date">This build is already up to date.</string>
+    <string name="update_check_upstream_latest">Upstream latest: %1$s</string>
+    <string name="update_check_upstream_newer">Upstream has a newer version (%1$s). Upstream builds are signed differently, so they cannot be installed over this build — merge it into the mod branch instead.</string>
+    <string name="update_check_upstream_failed">Upstream check failed: %1$s</string>
+    <string name="open_release_page">Open release page</string>
+    <!-- Download list: total size still unknown (e.g. HLS length estimation failed) -->
+    <string name="download_progress_size_unknown">%1$s / size unknown</string>
+    <string name="download_error_forbidden">The server refused the download request (HTTP %1$d). The link may be behind a referer check or require a login session.</string>
+    <string name="download_error_not_found">The download address is no longer valid (HTTP %1$d). Delete this task and fetch the address again.</string>
+    <string name="download_error_http_status">The download request was rejected by the server (HTTP %1$d).</string>
 </resources>
