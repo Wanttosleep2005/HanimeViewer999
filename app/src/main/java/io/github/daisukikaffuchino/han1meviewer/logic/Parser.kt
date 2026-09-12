@@ -3,10 +3,8 @@ package io.github.daisukikaffuchino.han1meviewer.logic
 import android.annotation.SuppressLint
 import io.github.daisukikaffuchino.utils.LogUtil
 import io.github.daisukikaffuchino.han1meviewer.EMPTY_STRING
-import io.github.daisukikaffuchino.han1meviewer.HanimeConstants.HANIME_URL
 import io.github.daisukikaffuchino.han1meviewer.HanimeResolution
 import io.github.daisukikaffuchino.han1meviewer.LOCAL_DATE_FORMAT
-import io.github.daisukikaffuchino.han1meviewer.logic.SettingsRepository
 import io.github.daisukikaffuchino.han1meviewer.logic.SettingsRepository.isAlreadyLogin
 import io.github.daisukikaffuchino.han1meviewer.R
 import io.github.daisukikaffuchino.han1meviewer.logic.exception.LoginStateExpiredException
@@ -55,7 +53,6 @@ object Parser {
     }
 
     fun homePageVer2(body: String): WebsiteState<HomePage> {
-        val isAVSite = SettingsRepository.baseUrl == HANIME_URL[3]
         val parseBody = Jsoup.parse(body).body()
         val csrfToken = parseBody.selectFirst("input[name=_token]")?.attr("value") // csrf token
         val homePageParse = parseBody.select("div[id=home-rows-wrapper] > div")
@@ -123,26 +120,22 @@ object Parser {
         val cosplayClass = homePageParse.getOrNull(12)  // Cosplay
         val watchingNowClass = homePageParse.getOrNull(13)  // 他们在看
 
-        val newAnimeTrailerClass = homePageParse.getOrNull(if (isAVSite) 13 else 12)
+        // 「新番预告」区块。
+        // ⚠️ javchu（AV 站）在 mod 7.0 被移除前，这里会按站点取 12 或 13 两个下标；
+        // 现在只剩 hanime 一种结构，固定 12，且必须走下面的「逐个 a 标签」解析 ——
+        // 直接整块 extractHanimeInfo() 会把非影片的推广链接也吞进来。
+        val newAnimeTrailerClass = homePageParse.getOrNull(12)
 
         val latestReleaseList = latestReleaseClass.extractHanimeInfo()
         val latestHanimeList = mutableListOf<HanimeInfo>()
-        if (isAVSite){
-            latestHanimeList.addAll(latestUploadClass.extractHanimeInfo())
-        } else {
-            latestHanimeList.addAll(latestUploadClass.extractHanimeInfo())
-        }
+        latestHanimeList.addAll(latestUploadClass.extractHanimeInfo())
         val ecchiAnimeList = ecchiAnimeClass.extractHanimeInfo()
         val shortEpisodeAnimeList = shortEpisodeAnimeClass.extractHanimeInfo()
         val motionAnimeList = motionAnimeClass.extractHanimeInfo()
         val threeDCGList = threeDCGClass.extractHanimeInfo()
         val twoPointFiveDAnimeList = twoPointFiveDAnimeClass.extractHanimeInfo()
         val twoDAnimeList = mutableListOf<HanimeInfo>()
-        if (isAVSite){
-            twoDAnimeList.addAll(twoDAnimeClass.extractHanimeInfo())
-        } else {
-            twoDAnimeList.addAll(twoDAnimeClass.extractHanimeInfo())
-        }
+        twoDAnimeList.addAll(twoDAnimeClass.extractHanimeInfo())
 
         val aiGeneratedList = aiGeneratedClass.extractHanimeInfo()
         val mmdList = mmdClass.extractHanimeInfo()
@@ -150,31 +143,26 @@ object Parser {
         val watchingNowList = watchingNowClass.extractHanimeInfo()
 
         val newAnimeTrailerList = mutableListOf<HanimeInfo>()
-        if (isAVSite){
-            newAnimeTrailerList.addAll(newAnimeTrailerClass.extractHanimeInfo())
-        } else {
-            val newAnimeTrailerItems =
-                newAnimeTrailerClass?.select("a")
-            newAnimeTrailerItems?.forEach { newAnimeTrailerItem ->
-                val videoCode = newAnimeTrailerItem.attr("href").toVideoCode()
+        val newAnimeTrailerItems = newAnimeTrailerClass?.select("a")
+        newAnimeTrailerItems?.forEach { newAnimeTrailerItem ->
+            val videoCode = newAnimeTrailerItem.attr("href").toVideoCode()
 
-                val coverUrl = newAnimeTrailerItem.selectFirst("img")?.attr("src")
-                val title = newAnimeTrailerItem.selectFirst("div.home-rows-videos-title")?.text()
-                if (title == null || coverUrl == null || videoCode == null) return@forEach
-                newAnimeTrailerList.add(
-                    HanimeInfo(
-                        title = title,
-                        coverUrl = coverUrl,
-                        videoCode = videoCode,
-                        duration = "",
-                        currentArtist = null,
-                        views = null,
-                        uploadTime = null,
-                        genre = null,
-                        itemType = HanimeInfo.SIMPLIFIED
-                    )
+            val coverUrl = newAnimeTrailerItem.selectFirst("img")?.attr("src")
+            val title = newAnimeTrailerItem.selectFirst("div.home-rows-videos-title")?.text()
+            if (title == null || coverUrl == null || videoCode == null) return@forEach
+            newAnimeTrailerList.add(
+                HanimeInfo(
+                    title = title,
+                    coverUrl = coverUrl,
+                    videoCode = videoCode,
+                    duration = "",
+                    currentArtist = null,
+                    views = null,
+                    uploadTime = null,
+                    genre = null,
+                    itemType = HanimeInfo.SIMPLIFIED
                 )
-            }
+            )
         }
 
         // emit!

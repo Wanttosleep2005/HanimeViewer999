@@ -1,0 +1,7 @@
+# Shell 脚本一律以 LF 入库。
+#
+# 本机 core.autocrlf=true，会把工作区的 .sh 转成 CRLF；带 CRLF 的脚本拿到
+# Linux（比如仓库根的 setup-app-proxy.sh 是要在 VPS 上跑的）会因 shebang 尾部
+# 多一个 \r 而报 "bad interpreter: /usr/bin/env: no such file or directory"。
+# 这条规则只覆盖 shell 脚本，不动既有 Kotlin/XML 文件，避免全库 renormalize。
+*.sh text eol=lf

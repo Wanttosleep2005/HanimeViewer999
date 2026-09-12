@@ -27,7 +27,6 @@ internal fun buildDomainOptions(context: Context): List<Pair<String, String>> = 
     "${HANIME_HOSTNAME[0]} (${context.getString(R.string.default_)})" to HANIME_URL[0],
     "${HANIME_HOSTNAME[1]} (${context.getString(R.string.alternative)})" to HANIME_URL[1],
     "${HANIME_HOSTNAME[2]} (${context.getString(R.string.alternative)})" to HANIME_URL[2],
-    "${HANIME_HOSTNAME[3]} (av)" to HANIME_URL[3],
     // nJAV 是独立数据源，但它也得在这一栏里能被选中 / 被展示出来，
     // 否则切到 nJAV 之后「域名」这一行显示的还是 hanime 的地址。
     "${HanimeConstants.NJAV_HOSTNAME} (nJAV)" to HanimeConstants.NJAV_URL,

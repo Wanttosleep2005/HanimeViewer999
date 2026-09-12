@@ -5,6 +5,7 @@ import android.app.Notification
 import android.content.Context
 import android.content.pm.ServiceInfo
 import android.os.ParcelFileDescriptor
+import io.github.daisukikaffuchino.han1meviewer.logic.network.HProxyAuthenticator
 import io.github.daisukikaffuchino.utils.LogUtil
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
@@ -223,6 +224,7 @@ class HanimeDownloadWorker(
             .connectTimeout(15, TimeUnit.SECONDS)
             .readTimeout(30, TimeUnit.SECONDS)
             .proxySelector(HProxySelector())
+            .proxyAuthenticator(HProxyAuthenticator.http)
             .build()
     }
 
@@ -244,13 +246,40 @@ class HanimeDownloadWorker(
         return download()
     }
 
-    private suspend fun createNewRaf(file: File): HanimeDownloadEntity? {
+    /**
+     * 统一的失败出口：系统通知 + 应用内 Toast + `Result.failure`。
+     *
+     * 三件事必须一起做 —— 少任何一件，失败就会变成「界面没反应」。
+     */
+    private fun failureResult(reason: String): Result {
+        showFailureNotification(reason)
+        mainScope.launch {
+            SonnerToast.error(
+                context.getString(R.string.download_task_failed_s_reason_s, hanimeName, reason)
+            )
+        }
+        return Result.failure(workDataOf(DownloadState.STATE to DownloadState.Failed.mask))
+    }
+
+    /**
+     * 建一条下载记录：**先把记录落库，再谈联网**。
+     *
+     * ⚠️ 这里以前把「探测总大小」和「落库」绑在一起（探不到就 `return null`），
+     * 后果就是 nJAV 点下载后「下载」界面里**什么都看不到**：
+     * HLS 要先拉主清单、再拉分片清单、再抽样十几个分片问大小，这一串请求慢起来
+     * 十几秒；中途失败还会被 `Result.retry()` 静默重试（**没有通知、没有 DB 记录**），
+     * 用户看到的就是「点了一下，没反应」。
+     *
+     * 所以现在把职责拆开：这一步只负责「开文件 + 落库」，`length = 0` 表示「还不知道」，
+     * 真正的探测交给 [resolveLength]。探测失败也不再影响这条记录是否存在。
+     */
+    private suspend fun createDownloadRecord(file: File): HanimeDownloadEntity? {
         return withContext(Dispatchers.IO) {
             var raf: RandomAccessFile? = null
             try {
                 // SAF 优先
                 val safUri = SafFileManager.getDownloadVideoFileUri(context, videoCode, createVideoName(hanimeName, quality, videoType))
-                LogUtil.i(TAG,safUri.toString())
+                LogUtil.i(TAG, safUri?.toString() ?: file.absolutePath)
                 if (safUri != null) {
                     context.contentResolver.openFileDescriptor(safUri, "rw")?.closeQuietly()
                 } else {
@@ -258,10 +287,8 @@ class HanimeDownloadWorker(
                     raf = RandomAccessFile(file, "rwd")
                 }
 
-                val len = fetchContentLength() ?: return@withContext null
-                if (len > 0) {
-                    // 创建数据库记录
-                    val entity = HanimeDownloadEntity(
+                DatabaseRepo.HanimeDownload.insert(
+                    HanimeDownloadEntity(
                         groupId = groupId,
                         coverUrl = coverUrl,
                         coverUri = null,
@@ -271,32 +298,60 @@ class HanimeDownloadWorker(
                         videoUri = safUri?.toString() ?: file.toUri().toString(),
                         quality = quality,
                         videoUrl = downloadUrl,
-                        length = len,
-                        downloadedLength = 0,
-                        state = DownloadState.Queued
+                        length = 0L,
+                        downloadedLength = 0L,
+                        state = DownloadState.Queued,
                     )
-                    DatabaseRepo.HanimeDownload.insert(entity)
-                    // 预写入长度（只有 File 支持）。
-                    // ⚠️ HLS 的 len 是**抽样估算**出来的，提前 setLength 会把文件撑成
-                    // 一段空洞，之后按追加写就全错位了 —— 这种情况让文件从 0 自然长起来。
-                    if (!isHlsDownload) raf?.setLength(len)
-                    return@withContext entity
-                }
+                )
+                // insert 不返回 rowid，回查一次拿带 id 的实体
+                DatabaseRepo.HanimeDownload.find(videoCode, quality)
             } catch (e: Exception) {
-                if (e is CancellationException || e.isStoppedCancellation() || e.isRetryableNetworkError()) {
-                    throw e
-                }
+                if (e is CancellationException) throw e
                 e.printStackTrace()
                 if (file.exists() && file.length() == 0L) {
                     dbScope.launch {
                         HFileManager.getDownloadVideoFolder(context, videoCode).deleteRecursively()
                     }
                 }
+                null
             } finally {
                 raf?.closeQuietly()
             }
-            null
         }
+    }
+
+    /**
+     * 探测总大小并写回数据库。**探测失败不抛异常**，只让 `length` 留在 0（未知）。
+     *
+     * - HLS 不依赖长度（完成判定看「分片是否全部写完」），只是进度条暂时没有百分比；
+     * - 直链没有长度就没法按字节区间下载，调用方会把它判成失败并**明确显示出来**。
+     *
+     * 老代码在探测阶段抛 `IOException` 交给 WorkManager 静默 retry，那是最难查的一种失败。
+     */
+    private suspend fun resolveLength(
+        entity: HanimeDownloadEntity,
+        file: File,
+        useSaf: Boolean,
+    ): HanimeDownloadEntity {
+        val len = try {
+            fetchContentLength()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            LogUtil.w(TAG, "获取下载总大小失败，先按「未知长度」继续：${e.message}")
+            null
+        } ?: 0L
+        if (len <= 0L) return entity
+
+        // 预写入长度（只有 File 支持）。
+        // ⚠️ HLS 的 len 是**抽样估算**出来的，提前 setLength 会把文件撑成
+        // 一段空洞，之后按追加写就全错位了 —— 这种情况让文件从 0 自然长起来。
+        if (!isHlsDownload && !useSaf) {
+            runCatching { RandomAccessFile(file, "rwd").use { it.setLength(len) } }
+                .onFailure { LogUtil.w(TAG, "预分配文件长度失败：${it.message}") }
+        }
+        DatabaseRepo.HanimeDownload.update(entity.copy(length = len))
+        return entity.copy(length = len)
     }
 
     private suspend fun fetchContentLength(): Long? {
@@ -354,30 +409,25 @@ class HanimeDownloadWorker(
                     return@withContext Result.success()
                 }
             }
-            var entity = try {
-                DatabaseRepo.HanimeDownload.find(videoCode, quality) ?: run {
-                    createNewRaf(file)
-                    DatabaseRepo.HanimeDownload.find(videoCode, quality)
-                        ?: return@withContext run {
-                            LogUtil.d(TAG, "entity is null, create new raf failed")
-                            val reason = context.getString(R.string.download_error_file_info)
-                            showFailureNotification(reason)
-                            mainScope.launch {
-                                SonnerToast.error(
-                                    context.getString(R.string.download_task_failed_s_reason_s, hanimeName, reason)
-                                )
-                            }
-                            Result.failure(workDataOf(DownloadState.STATE to DownloadState.Failed.mask))
-                        }
+            var entity = DatabaseRepo.HanimeDownload.find(videoCode, quality)
+                ?: createDownloadRecord(file)
+                ?: return@withContext failureResult(context.getString(R.string.download_error_file_info))
+
+            // 长度未知才去探（刚建的记录是 0；上次探测失败留下的也是 0）。
+            // 探测失败不再让任务消失，见 resolveLength。
+            if (entity.length <= 0L) {
+                entity = resolveLength(entity, file, useSaf = safUri != null)
+            }
+
+            // 直链拿不到总长度就没法按字节区间下载，也没法判断「下完了没」——
+            // 宁可明确报失败（记录还在，用户能在列表里看到并重试），
+            // 也不要静默挂起或误判成完成。
+            // HLS 不受这条约束：它按「分片是否全部写完」判定完成。
+            if (!isHlsDownload && entity.length <= 0L) {
+                failureResult(context.getString(R.string.download_error_file_info)).let { result ->
+                    DatabaseRepo.HanimeDownload.update(entity.copy(state = DownloadState.Failed))
+                    return@withContext result
                 }
-            } catch (e: Exception) {
-                if (e.isRetryableNetworkError() && runAttemptCount < MAX_WORK_RETRY_COUNT) {
-                    DatabaseRepo.HanimeDownload.find(videoCode, quality)?.let {
-                        DatabaseRepo.HanimeDownload.update(it.copy(state = DownloadState.Queued))
-                    }
-                    return@withContext Result.retry()
-                }
-                throw e
             }
 
             // HLS 的 length 是估算值，不能用它做「已完成 / 数据异常」的判断，
@@ -474,7 +524,13 @@ class HanimeDownloadWorker(
                             downloadedLength += len
 
                             if (System.currentTimeMillis() - delayTime > RESPONSE_INTERVAL) {
-                                val progress = (downloadedLength * 100 / entity.length).coerceAtMost(100)
+                                // 非 HLS 走到这里时 entity.length 必然 > 0（上面已拦过），
+                                // 但除零的代价是崩界面，这里再兜一层。
+                                val progress = if (entity.length > 0L) {
+                                    (downloadedLength * 100 / entity.length).coerceAtMost(100)
+                                } else {
+                                    0L
+                                }
                                 setProgress(workDataOf(PROGRESS to progress.toInt()))
                                 updateDownloadNotification(progress.toInt())
                                 DatabaseRepo.HanimeDownload.update(
@@ -638,7 +694,13 @@ class HanimeDownloadWorker(
                 val now = System.currentTimeMillis()
                 if (now - lastUpdate > RESPONSE_INTERVAL) {
                     lastUpdate = now
-                    val progress = (downloadedLength * 100 / entity.length).toInt().coerceIn(0, 100)
+                    // entity.length 可能为 0（抽样探测失败，见 resolveLength）——
+                    // 那时没有百分比可言，进度按 0 报，别做除零。
+                    val progress = if (entity.length > 0L) {
+                        (downloadedLength * 100 / entity.length).toInt().coerceIn(0, 100)
+                    } else {
+                        0
+                    }
                     setProgress(workDataOf(PROGRESS to progress))
                     updateDownloadNotification(progress)
                     DatabaseRepo.HanimeDownload.update(

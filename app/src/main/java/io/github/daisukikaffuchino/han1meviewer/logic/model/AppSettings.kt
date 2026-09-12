@@ -153,6 +153,14 @@ data class AppSettings(
     val proxyType: ProxyType = ProxyType.System,
     val proxyIp: String = "",
     val proxyPort: Int = -1,
+    /**
+     * HTTP / SOCKS5 代理的认证凭据。
+     *
+     * 留空即「匿名代理」。**公网 VPS 上强烈建议填** —— 一个不带认证的开放代理
+     * 放到公网上，几小时内就会被扫到并被当成免费跳板。
+     */
+    val proxyUsername: String = "",
+    val proxyPassword: String = "",
     val cachedUpdateJson: String? = null,
     val ignoredVersionCode: Int = -1,
     val downloadCountLimit: Int = 2,

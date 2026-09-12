@@ -9,6 +9,8 @@ import coil.request.ImageRequest
 import coil.request.ImageResult
 import io.github.daisukikaffuchino.utils.applicationContext
 import io.github.daisukikaffuchino.han1meviewer.logic.network.HDns
+import io.github.daisukikaffuchino.han1meviewer.logic.network.HProxyAuthenticator
+import io.github.daisukikaffuchino.han1meviewer.logic.network.HProxySelector
 import okhttp3.OkHttpClient
 import java.lang.ref.WeakReference
 import java.util.concurrent.TimeUnit
@@ -18,8 +20,17 @@ object HImageMeower {
 
     private const val TAG = "CoilImageNyanner"
 
+    /**
+     * 封面图用的 client。
+     *
+     * ⚠️ 和 [io.github.daisukikaffuchino.han1meviewer.logic.network.ServiceCreator.downloadClient]
+     * 一样，这里也**必须**挂代理：漏挂的表现是「文字内容能加载、封面图一张都出不来」，
+     * 用户完全看不出是代理没生效。
+     */
     private val okHttpClient = OkHttpClient.Builder()
         .connectTimeout(5, TimeUnit.SECONDS)
+        .proxySelector(HProxySelector())
+        .proxyAuthenticator(HProxyAuthenticator.http)
         .dns(HDns())
         .build()
 

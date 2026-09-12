@@ -6,7 +6,6 @@ import android.util.SparseArray
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import io.github.daisukikaffuchino.han1meviewer.HanimeConstants.HANIME_URL
 import io.github.daisukikaffuchino.han1meviewer.logic.SettingsRepository
 import io.github.daisukikaffuchino.han1meviewer.logic.DatabaseRepo
 import io.github.daisukikaffuchino.han1meviewer.logic.DatabaseRepo.HanimeAdvancedSearchRepo.toSearchOptionSet
@@ -87,7 +86,10 @@ class SearchViewModel(
     var brandMap = SparseArray<Set<SearchOption>>()
 
     val genres by unsafeLazy {
-        loadAssetAs<List<SearchOption>>(if (SettingsRepository.baseUrl == HANIME_URL[3]) "search_options/genre_av.json" else "search_options/genre.json").orEmpty()
+        loadAssetAs<List<SearchOption>>(
+            if (SettingsRepository.isNjavSite) "search_options/genre_av.json"
+            else "search_options/genre.json"
+        ).orEmpty()
     }
 
     val tags by unsafeLazy {

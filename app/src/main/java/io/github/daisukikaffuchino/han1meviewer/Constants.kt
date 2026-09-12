@@ -58,8 +58,18 @@ val HANIME_BASE_URL: String
  * 如果添加备选网址别忘了确认[String.toVideoCode]的videoUrlRegex
  */
 object HanimeConstants {
-    val HANIME_HOSTNAME = arrayOf("hanime1.me","hanime1.com","hanimeone.me","javchu.com")
-    val HANIME_URL = arrayOf("https://hanime1.me/","https://hanime1.com/","https://hanimeone.me/","https://javchu.com/")
+    /**
+     * hanime 系列镜像。
+     *
+     * ⚠️ mod 7.0 起**只剩这一个站点族**：原先的第 4 项 `javchu.com`（hanime 线上的
+     * AV 站）已被整体移除 —— 它的内容与 nJAV（njavtv.com）高度重合，但要多养一套
+     * 解析分支，得不偿失。所以：
+     * - 这里**只能**放真正意义上的 hanime 镜像，别再往里塞别的站（比如 nJAV）；
+     * - [HANIME_URL] 与 [ANIME_URL] 现在是同一份列表，`ANIME_URL` 只是语义别名
+     *   （「里番站」），保留它是为了让调用点读起来仍然自解释。
+     */
+    val HANIME_HOSTNAME = arrayOf("hanime1.me","hanime1.com","hanimeone.me")
+    val HANIME_URL = arrayOf("https://hanime1.me/","https://hanime1.com/","https://hanimeone.me/")
     val ANIME_URL = arrayOf("https://hanime1.me/","https://hanime1.com/","https://hanimeone.me/")
 
     /**
@@ -74,10 +84,14 @@ object HanimeConstants {
     const val NJAV_HOSTNAME = "njavtv.com"
     const val NJAV_URL = "https://njavtv.com/"
 
+    /** 已知站点集合：hanime 各镜像 + nJAV。用于校准历史遗留的域名设置。 */
+    val ALL_HOSTNAMES = HANIME_HOSTNAME + NJAV_HOSTNAME
+    val ALL_URLS = HANIME_URL + NJAV_URL
+
     /**
      * 站点的显示名 → 数据源。
      *
-     * njavtv.com 走独立数据源，其余（含 hanime 各镜像与 javchu）都归
+     * njavtv.com 走独立数据源，其余 hanime 各镜像都归
      * [io.github.daisukikaffuchino.han1meviewer.logic.model.SiteSource.Hanime1]。
      */
     fun siteSourceOf(url: String): SiteSource =

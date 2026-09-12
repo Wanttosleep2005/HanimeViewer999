@@ -186,6 +186,8 @@ fun NetworkSettingsRouteScreen(embedded: Boolean = false) {
         proxyType = SettingsRepository.proxyType,
         proxyIp = SettingsRepository.proxyIp,
         proxyPort = SettingsRepository.proxyPort,
+        proxyUsername = SettingsRepository.proxyUsername,
+        proxyPassword = SettingsRepository.proxyPassword,
         dohEnabled = SettingsRepository.useDoH,
         dohPreset = SettingsRepository.dohPreset,
         dohCustomUrl = SettingsRepository.dohCustomUrl,
@@ -331,7 +333,10 @@ fun NetworkSettingsRouteScreen(embedded: Boolean = false) {
         onOpenDohTest = { runDohTest() },
         onDismissDelayTest = { stopDelayTest() },
         onDismissDohTest = { stopDohTest() },
-        onApplyProxy = { type, ip, port ->
+        onApplyProxy = { config ->
+            val type = config.type
+            val ip = config.ip
+            val port = config.port
             val valid = when (type) {
                 HProxySelector.TYPE_DIRECT, HProxySelector.TYPE_SYSTEM -> true
                 HProxySelector.TYPE_HTTP, HProxySelector.TYPE_SOCKS -> HProxySelector.validateIp(ip) && HProxySelector.validatePort(
@@ -344,11 +349,23 @@ fun NetworkSettingsRouteScreen(embedded: Boolean = false) {
                 SonnerToast.warning(R.string.invalid_ip_or_port)
                 return@NetworkSettingsScreen
             }
+            // 密码可以留空（有些代理只校验用户名），但用户名留空 = 匿名代理，
+            // 密码就一并清掉，避免留下一个「有密码却没用户名」的死配置。
+            val username = config.username
+            val password = if (username.isBlank()) "" else config.password
             if (type == HProxySelector.TYPE_SOCKS) {
                 showSocksWarning = true
             }
             coroutineScope.launch {
-                SettingsRepository.update { it.copy(proxyType = io.github.daisukikaffuchino.han1meviewer.logic.model.ProxyType.fromId(type), proxyIp = ip, proxyPort = port) }
+                SettingsRepository.update {
+                    it.copy(
+                        proxyType = io.github.daisukikaffuchino.han1meviewer.logic.model.ProxyType.fromId(type),
+                        proxyIp = ip,
+                        proxyPort = port,
+                        proxyUsername = username,
+                        proxyPassword = password,
+                    )
+                }
                 HProxySelector.rebuildNetwork()
                 HanimeNetwork.rebuildNetwork()
             }

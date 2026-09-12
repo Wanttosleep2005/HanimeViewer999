@@ -97,9 +97,13 @@ data class HanimeDownloadEntity(
      * `downloadedLength / length` 超过 100%，界面上会出现「108%」、
      * 进度条也会溢出（`item.progress / 100f` 直接喂给了
      * `LinearProgressIndicator`，它的进度必须在 0f..1f）。
+     *
+     * ⚠️ [length] 还可能是 **0**（「还不知道」）：记录现在是**先落库后探测**的
+     * （见 `HanimeDownloadWorker.createDownloadRecord`），探测失败时长度就停在 0。
+     * 这时必须返回 0 —— 直接做 `Long / 0L` 会抛 ArithmeticException 把界面干崩。
      */
     @get:IntRange(from = 0, to = 100)
-    val progress get() = (downloadedLength * 100 / length).toInt().coerceIn(0, 100)
+    val progress get() = if (length <= 0L) 0 else (downloadedLength * 100 / length).toInt().coerceIn(0, 100)
 
     val isDownloading get() = state == DownloadState.Downloading
 

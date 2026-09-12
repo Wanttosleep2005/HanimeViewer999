@@ -8,6 +8,7 @@ import androidx.compose.ui.platform.LocalInspectionMode
 import coil3.ImageLoader
 import coil3.network.okhttp.OkHttpNetworkFetcherFactory
 import coil3.request.ImageRequest
+import io.github.daisukikaffuchino.han1meviewer.logic.network.HProxyAuthenticator
 import io.github.daisukikaffuchino.han1meviewer.DESKTOP_USER_AGENT
 import io.github.daisukikaffuchino.han1meviewer.logic.network.HDns
 import io.github.daisukikaffuchino.han1meviewer.logic.network.HProxySelector
@@ -68,6 +69,7 @@ internal fun createGetchuImageLoader(context: Context): ImageLoader {
         .connectTimeout(15, TimeUnit.SECONDS)
         .dns(HDns())
         .proxySelector(HProxySelector())
+        .proxyAuthenticator(HProxyAuthenticator.http)
         .addInterceptor { chain ->
             val request = chain.request()
             val url = request.url

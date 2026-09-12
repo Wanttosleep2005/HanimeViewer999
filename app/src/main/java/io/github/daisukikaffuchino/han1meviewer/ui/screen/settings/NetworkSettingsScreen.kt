@@ -75,6 +75,24 @@ enum class ProxyTypeOption(val value: Int) {
     Socks(HProxySelector.TYPE_SOCKS),
 }
 
+/**
+ * 一次代理配置的完整内容。
+ *
+ * 以前这里是个 `(Int, String, Int)` 三元组，加用户名/密码后参数太多，
+ * 改成具名数据类，免得调用点写成 `onApplyProxy(t, ip, port, "", "")` 这种
+ * 「哪个空串是用户名哪个是密码」的谜题。
+ */
+data class ProxyConfig(
+    val type: Int,
+    val ip: String,
+    val port: Int,
+    val username: String = "",
+    val password: String = "",
+) {
+    /** 是否配了认证凭据。 */
+    val hasAuth: Boolean get() = username.isNotBlank()
+}
+
 @Composable
 fun NetworkSettingsScreen(
     state: NetworkSettingsUiState,
@@ -85,6 +103,8 @@ fun NetworkSettingsScreen(
     proxyType: Int,
     proxyIp: String,
     proxyPort: Int,
+    proxyUsername: String,
+    proxyPassword: String,
     dohEnabled: Boolean,
     dohPreset: String,
     dohCustomUrl: String,
@@ -110,7 +130,7 @@ fun NetworkSettingsScreen(
     onOpenDohTest: () -> Unit,
     onDismissDelayTest: () -> Unit,
     onDismissDohTest: () -> Unit,
-    onApplyProxy: (Int, String, Int) -> Unit,
+    onApplyProxy: (ProxyConfig) -> Unit,
     embedded: Boolean = false,
 ) {
     var showDomainDialog by rememberSaveable { mutableStateOf(false) }
@@ -154,10 +174,12 @@ fun NetworkSettingsScreen(
             initialType = proxyType,
             initialIp = proxyIp,
             initialPort = proxyPort,
+            initialUsername = proxyUsername,
+            initialPassword = proxyPassword,
             onDismiss = { showProxyDialog = false },
-            onConfirm = { type, ip, port ->
+            onConfirm = { config ->
                 showProxyDialog = false
-                onApplyProxy(type, ip, port)
+                onApplyProxy(config)
             },
         )
     }
@@ -330,8 +352,10 @@ private fun ProxyDialog(
     initialType: Int,
     initialIp: String,
     initialPort: Int,
+    initialUsername: String,
+    initialPassword: String,
     onDismiss: () -> Unit,
-    onConfirm: (Int, String, Int) -> Unit,
+    onConfirm: (ProxyConfig) -> Unit,
 ) {
     var selectedType by rememberSaveable(initialType) {
         mutableStateOf(
@@ -343,6 +367,8 @@ private fun ProxyDialog(
     var portText by rememberSaveable(initialPort) {
         mutableStateOf(initialPort.takeIf { it >= 0 }?.toString().orEmpty())
     }
+    var username by rememberSaveable(initialUsername) { mutableStateOf(initialUsername) }
+    var password by rememberSaveable(initialPassword) { mutableStateOf(initialPassword) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -391,12 +417,38 @@ private fun ProxyDialog(
                     label = { Text(stringResource(R.string.port)) },
                     modifier = Modifier.fillMaxWidth(),
                 )
+                // 认证是可选的：留空就是匿名代理。
+                // ⚠️ 公网 VPS 上别留空 —— 开放代理会被扫到并当成跳板。
+                OutlinedTextField(
+                    value = username,
+                    onValueChange = { username = it },
+                    enabled = editable,
+                    singleLine = true,
+                    label = { Text(stringResource(R.string.proxy_username)) },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                OutlinedTextField(
+                    value = password,
+                    onValueChange = { password = it },
+                    enabled = editable,
+                    singleLine = true,
+                    label = { Text(stringResource(R.string.proxy_password)) },
+                    modifier = Modifier.fillMaxWidth(),
+                )
             }
         },
         confirmButton = {
             TextButton(
                 onClick = {
-                    onConfirm(selectedType.value, ip, portText.toIntOrNull() ?: -1)
+                    onConfirm(
+                        ProxyConfig(
+                            type = selectedType.value,
+                            ip = ip.trim(),
+                            port = portText.toIntOrNull() ?: -1,
+                            username = username.trim(),
+                            password = password,
+                        )
+                    )
                 }
             ) {
                 Text(stringResource(R.string.confirm))
@@ -827,6 +879,8 @@ private fun NetworkSettingsScreenPreview() {
             proxyType = HProxySelector.TYPE_SYSTEM,
             proxyIp = "",
             proxyPort = -1,
+            proxyUsername = "",
+            proxyPassword = "",
             dohEnabled = false,
             dohPreset = "cloudflare",
             dohCustomUrl = "",
@@ -845,7 +899,7 @@ private fun NetworkSettingsScreenPreview() {
             onOpenDohTest = {},
             onDismissDelayTest = {},
             onDismissDohTest = {},
-            onApplyProxy = { _, _, _ -> },
+            onApplyProxy = { _ -> },
         )
     }
 }
@@ -874,8 +928,10 @@ fun ProxyDialogPreview() {
             initialType = 1,
             initialIp = "1.1.1.1",
             initialPort = 8080,
+            initialUsername = "",
+            initialPassword = "",
             onDismiss = { },
-            onConfirm = { _, _, _ -> },
+            onConfirm = { _ -> },
         )
     }
 }

@@ -1,8 +1,8 @@
 {
-  "versionName": "26.3.2-mod.6.10",
-  "versionCode": 260924,
-  "downloadUrl": "https://github.com/ddsmie4t2g/HanimeViewer/releases/download/v26.3.2-mod.6.10/Han1meViewer-v26.3.2-mod.6.10.apk",
-  "updateDescription": "1. 修好 nJAV 下载：以前点下载会报「无法获取文件大小或下载信息」。原因是 nJAV 给的是 HLS 清单（.m3u8），直接按普通文件下载只会得到一个几 KB 的文本。现在会解析清单、按分片下载并拼接成一个可直接播放的 .ts 文件，支持断点续传与单片重试。\n2. 修好中文字幕 / 无码分类页里「时长显示成中文字幕」：卡片上其实有两个角标，解析时取错了那个。现在按时长格式识别，不再认错。\n3. 修好详情页「播放量显示 null」：没有播放量数据时改为不显示，而不是印出 null。\n4. 下载进度百分比做了上限保护，不会再出现超过 100% 的情况；下载失败也一定会给出提示，不会再静默消失。",
+  "versionName": "26.3.2-mod.7.0",
+  "versionCode": 260925,
+  "downloadUrl": "https://github.com/ddsmie4t2g/HanimeViewer/releases/download/v26.3.2-mod.7.0/Han1meViewer-v26.3.2-mod.7.0.apk",
+  "updateDescription": "1. 移除 javchu（AV 站）整站，现在只保留 hanime 与 nJAV 两个数据源：站点切换变成「里番 ⇄ nJAV」两态循环；域名列表里去掉了 javchu；同时把原先挂在 javchu 上的 AV 分支逻辑（首页分类、搜索分类）统一改由 nJAV 触发。老版本里存过 javchu 域名的用户会被自动兜回默认镜像，不会卡在打不开的站点上。\n2. 修好 nJAV「点下载没反应、下载列表里看不到任务」：以前数据库记录要等网络探测（解析 HLS 清单 + 抽样估算总大小）成功之后才写入，探测慢或失败时列表里始终是空的；失败还会被静默重试。现在改成「先把任务写进列表，再去探测大小」，点下去就能立刻在「下载中」看到，并且失败会明确提示、可以重试。\n3. 代理能力加固：HTTP / SOCKS5 代理现在支持「用户名 + 密码」认证（公网 VPS 上别再开匿名代理，会被扫到当成跳板）；同时修好两处代理被忽略的问题 —— 下载（含 nJAV 的 HLS 分片）和封面图加载以前根本不走代理，表现为「配了代理，别的能开，下载和图片一动不动」。\n4. 顺带修掉一个崩溃隐患：下载总大小未知时进度计算会除以 0。",
   "forceUpdate": false,
   "isShowAnnouncement": false,
   "announcement": ""

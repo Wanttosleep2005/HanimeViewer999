@@ -10,6 +10,7 @@ import androidx.core.app.NotificationChannelCompat
 import androidx.core.app.NotificationManagerCompat
 import io.github.daisukikaffuchino.han1meviewer.logic.SettingsRepository
 import io.github.daisukikaffuchino.han1meviewer.logic.datastore.DataStoreManager
+import io.github.daisukikaffuchino.han1meviewer.logic.network.HProxyAuthenticator
 import io.github.daisukikaffuchino.han1meviewer.logic.network.HProxySelector
 import io.github.daisukikaffuchino.han1meviewer.ui.crash.CrashHandler
 import io.github.daisukikaffuchino.han1meviewer.util.AnimeShaders
@@ -49,6 +50,10 @@ class HanimeApplication : Application(), Application.ActivityLifecycleCallbacks 
         initNotificationChannel()
         MPVLib.create(applicationContext)
         MPVLib.init()
+
+        // SOCKS5 的用户名/密码认证只能通过全局 java.net.Authenticator 提供
+        // （那段协商发生在 Socket 建连内部，OkHttp 看不到），必须在任何建连之前装好。
+        HProxyAuthenticator.installSocksAuthenticator()
 
         if (AnimeShaders.copyShaderAssets(applicationContext) <= 0) {
             LogUtil.w(TAG, "Shader 复制失败")

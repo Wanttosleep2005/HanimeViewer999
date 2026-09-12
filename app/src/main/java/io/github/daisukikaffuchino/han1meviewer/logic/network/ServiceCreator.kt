@@ -1,5 +1,6 @@
 package io.github.daisukikaffuchino.han1meviewer.logic.network
 
+import io.github.daisukikaffuchino.han1meviewer.logic.network.HProxyAuthenticator
 import io.github.daisukikaffuchino.han1meviewer.logic.SettingsRepository
 import io.github.daisukikaffuchino.han1meviewer.logic.network.interceptor.CloudflareInterceptor
 import io.github.daisukikaffuchino.han1meviewer.logic.network.interceptor.GetchuInterceptor
@@ -73,16 +74,26 @@ object ServiceCreator {
             .addInterceptor(GetchuInterceptor())
             .cookieJar(CookieJar.NO_COOKIES)
             .proxySelector(HProxySelector())
+            .proxyAuthenticator(HProxyAuthenticator.http)
             .dns(dns)
             .build()
     }
 
+    /**
+     * 下载专用 client。
+     *
+     * ⚠️ 这里**必须**挂 [HProxySelector]：它以前漏挂了，后果是「应用内其它地方都走代理、
+     * 只有下载不走」—— 用户配了代理却下不动任何东西，而且没有任何报错。
+     * 别因为「下载要走直连更快」就把它摘掉，用户配代理往往正是因为直连不通。
+     */
     private fun buildDownloadClient(): OkHttpClient {
         return OkHttpClient.Builder()
             .connectTimeout(5, TimeUnit.SECONDS)
             .protocols(listOf(Protocol.HTTP_1_1))
             .addInterceptor(UserAgentInterceptor)
             .addInterceptor(downloadSpeedLimitInterceptor)
+            .proxySelector(HProxySelector())
+            .proxyAuthenticator(HProxyAuthenticator.http)
             .dns(dns)
             .build()
     }
@@ -99,6 +110,7 @@ object ServiceCreator {
             .cache(cache)
             .cookieJar(HCookieJar())
             .proxySelector(HProxySelector())
+            .proxyAuthenticator(HProxyAuthenticator.http)
             .dns(dns)
             .build()
     }

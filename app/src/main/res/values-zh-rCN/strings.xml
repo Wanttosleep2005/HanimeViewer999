@@ -118,6 +118,8 @@
     <string name="port">端口</string>
     <string name="direct">直接连接</string>
     <string name="system_proxy">系统代理</string>
+    <string name="proxy_username">用户名（可留空）</string>
+    <string name="proxy_password">密码（可留空）</string>
     <string name="host_or_ipv4">Host 或 IPv4</string>
     <string name="h_keyframe_settings">关键H帧设置</string>
     <string name="h_keyframes_enable">关键H帧，启动！</string>

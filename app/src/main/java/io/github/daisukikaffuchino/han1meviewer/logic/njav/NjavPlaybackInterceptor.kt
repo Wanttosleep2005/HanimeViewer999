@@ -1,5 +1,6 @@
 package io.github.daisukikaffuchino.han1meviewer.logic.njav
 
+import io.github.daisukikaffuchino.han1meviewer.logic.network.HProxyAuthenticator
 import io.github.daisukikaffuchino.han1meviewer.logic.network.HDns
 import io.github.daisukikaffuchino.han1meviewer.logic.network.HProxySelector
 import io.github.daisukikaffuchino.utils.unsafeLazy
@@ -82,6 +83,7 @@ object PlaybackHttpClient {
             .retryOnConnectionFailure(true)
             .dns(HDns())
             .proxySelector(HProxySelector())
+            .proxyAuthenticator(HProxyAuthenticator.http)
             .addInterceptor(NjavPlaybackInterceptor())
             .build()
     }

@@ -24,7 +24,6 @@ import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.lifecycleScope
 import io.github.daisukikaffuchino.han1meviewer.HanimeConstants
 import io.github.daisukikaffuchino.han1meviewer.HanimeConstants.ANIME_URL
-import io.github.daisukikaffuchino.han1meviewer.HanimeConstants.HANIME_URL
 import io.github.daisukikaffuchino.han1meviewer.BuildConfig
 import io.github.daisukikaffuchino.han1meviewer.logic.SettingsRepository
 import io.github.daisukikaffuchino.han1meviewer.logic.model.SiteSource
@@ -212,48 +211,41 @@ class MainActivity : BaseActivity() {
     }
 
     /**
-     * 抽屉头部「切换站点」：hanime 里番 → javchu(AV) → nJAV → 回到 hanime，三站循环。
+     * 抽屉头部「切换站点」：hanime 里番 ⇄ nJAV，两站循环。
      *
-     * 旧实现只在 hanime 与 javchu 之间二选一（[currentSite] 属于 [ANIME_URL] 就跳到
-     * javchu，否则跳回来），所以 nJAV 永远切不进去；而且它只改 domainName、不写
-     * siteSource，即使切过去网络层仍按 hanime 分流。这里把第三态补齐并同步数据源。
+     * mod 7.0 之前这里是个三态循环（hanime → javchu(AV) → nJAV），javchu 整站被移除后
+     * 就只剩两态了。三态时期最坑的是「切进 nJAV 就回不来」—— 旧实现只在 hanime 与
+     * javchu 之间二选一，而且只改 domainName、不写 siteSource，
+     * 于是切过去之后网络层仍按 hanime 分流。现在只有两个状态，判据直接看
+     * [SettingsRepository.isNjavSite]（数据源），不再靠比 URL 猜。
      */
     private fun confirmSiteSwitch() {
         showSiteSwitchConfirm = false
-        val currentSite = SettingsRepository.baseUrl
-        val avSite = HANIME_URL[3]                 // javchu.com：hanime 线上的 AV 站，仍归 hanime 数据源
-        val njavSite = HanimeConstants.NJAV_URL    // nJAV：独立数据源
+        val njavSite = HanimeConstants.NJAV_URL
         val onNjav = SettingsRepository.isNjavSite
-        // 回到 hanime 里番时用哪个镜像：优先用户之前记下的那个，但必须真的是
-        // [ANIME_URL] 成员（selectedBaseUrl 有可能被写成 javchu，否则就回不到「里番」了）。
+        // 回 hanime 时用哪个镜像：优先用户之前记下的那个，但必须真的是 hanime 镜像
+        // （selectedBaseUrl 有可能是历史遗留值，否则就回不到「里番」了）。
         val comebackSite = SettingsRepository.selectedBaseUrl
             .takeIf { it in ANIME_URL }
             ?: ANIME_URL[0]
 
         lifecycleScope.launch {
             SettingsRepository.update {
-                when {
+                if (onNjav) {
                     // nJAV → 回到 hanime 里番
-                    onNjav -> it.copy(
+                    it.copy(
                         domainName = comebackSite,
                         selectedBaseUrl = comebackSite,
                         siteSource = SiteSource.Hanime1,
                     )
-
-                    // 已经在 javchu 上 → nJAV
-                    currentSite == avSite -> it.copy(
+                } else {
+                    // hanime 里番（含自定义镜像）→ nJAV
+                    it.copy(
                         domainName = njavSite,
+                        // 记下「来的时候在哪个 hanime 镜像」，方便切回去
                         selectedBaseUrl = comebackSite,
                         siteSource = SiteSource.Njav,
                         // 自定义镜像只指向某一个站点，跟不过去，切换站点时关掉。
-                        useCustomMirrorSite = false,
-                    )
-
-                    // hanime 里番（含自定义镜像）→ javchu
-                    else -> it.copy(
-                        domainName = avSite,
-                        selectedBaseUrl = currentSite.takeIf { site -> site in ANIME_URL } ?: comebackSite,
-                        siteSource = SiteSource.Hanime1,
                         useCustomMirrorSite = false,
                     )
                 }

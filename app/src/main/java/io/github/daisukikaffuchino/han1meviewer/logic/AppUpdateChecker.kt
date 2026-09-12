@@ -1,6 +1,7 @@
 package io.github.daisukikaffuchino.han1meviewer.logic
 
 import android.util.Base64
+import io.github.daisukikaffuchino.han1meviewer.logic.network.HProxyAuthenticator
 import io.github.daisukikaffuchino.han1meviewer.BuildConfig
 import io.github.daisukikaffuchino.utils.LogUtil
 import io.github.daisukikaffuchino.han1meviewer.logic.SettingsRepository
@@ -126,6 +127,7 @@ object AppUpdateChecker {
             .readTimeout(20, TimeUnit.SECONDS)
             .dns(GitHubDns)
             .proxySelector(HProxySelector())
+            .proxyAuthenticator(HProxyAuthenticator.http)
             .build()
     }
 

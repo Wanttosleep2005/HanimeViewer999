@@ -1,5 +1,6 @@
 package io.github.daisukikaffuchino.han1meviewer.logic
 
+import io.github.daisukikaffuchino.han1meviewer.logic.network.HProxyAuthenticator
 import io.github.daisukikaffuchino.han1meviewer.USER_AGENT
 import io.github.daisukikaffuchino.han1meviewer.logic.network.GitHubDns
 import io.github.daisukikaffuchino.han1meviewer.logic.network.HProxySelector
@@ -121,6 +122,7 @@ object AppUpdateDownloader {
             .readTimeout(READ_TIMEOUT_SECONDS, TimeUnit.SECONDS)
             .dns(GitHubDns)
             .proxySelector(HProxySelector())
+            .proxyAuthenticator(HProxyAuthenticator.http)
             .build()
     }
 

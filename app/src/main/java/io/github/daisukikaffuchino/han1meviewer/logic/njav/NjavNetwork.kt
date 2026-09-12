@@ -1,5 +1,6 @@
 package io.github.daisukikaffuchino.han1meviewer.logic.njav
 
+import io.github.daisukikaffuchino.han1meviewer.logic.network.HProxyAuthenticator
 import io.github.daisukikaffuchino.han1meviewer.logic.network.HCookieJar
 import io.github.daisukikaffuchino.han1meviewer.logic.network.HDns
 import io.github.daisukikaffuchino.han1meviewer.logic.network.HProxySelector
@@ -105,6 +106,7 @@ object NjavNetwork {
             .addInterceptor(UrlLoggingInterceptor())
             .cookieJar(HCookieJar())
             .proxySelector(HProxySelector())
+            .proxyAuthenticator(HProxyAuthenticator.http)
             .dns(dns)
             .build()
     }

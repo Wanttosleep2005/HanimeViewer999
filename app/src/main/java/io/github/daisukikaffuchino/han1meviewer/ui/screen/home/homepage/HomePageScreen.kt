@@ -34,7 +34,6 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import io.github.daisukikaffuchino.han1meviewer.HanimeConstants
 import io.github.daisukikaffuchino.han1meviewer.BuildConfig
 import io.github.daisukikaffuchino.han1meviewer.HA1_GITHUB_URL
 import io.github.daisukikaffuchino.han1meviewer.logic.SettingsRepository
@@ -102,8 +101,9 @@ fun HomePageScreen(
         WindowInsets.statusBars.getTop(this).toDp() + 72.dp
     }
     // nJAV 数据源下首页内容是日本 AV，分类标题也要跟着切成 AV 那一套。
-    val isAVSite = SettingsRepository.isNjavSite ||
-            SettingsRepository.baseUrl == HanimeConstants.HANIME_URL[3]
+    // （mod 7.0 前这里还有个 `baseUrl == javchu` 的条件，javchu 整站已移除，
+    //   nJAV 是现在唯一的 AV 源。）
+    val isAVSite = SettingsRepository.isNjavSite
     LaunchedEffect(Unit) {
         viewModel.initializeHomePage()
     }

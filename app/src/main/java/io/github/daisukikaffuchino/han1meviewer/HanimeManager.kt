@@ -66,7 +66,7 @@ fun getHanimeVideoDownloadLink(videoCode: String) =
     else HANIME_BASE_URL + "download?v=" + videoCode
 
 val videoUrlRegex = Regex(
-    """(?:(?:https?:)?//[^\s"'<>/]+|(?:hanime(?:1|one)|javchu)\.(?:com|me))?(?:/[^/?#\s"'<>]+)*/watch\?(?:[^#\s"'<>]*&)?v=(\d+)"""
+    """(?:(?:https?:)?//[^\s"'<>/]+|hanime(?:1|one)\.(?:com|me))?(?:/[^/?#\s"'<>]+)*/watch\?(?:[^#\s"'<>]*&)?v=(\d+)"""
 )
 
 fun String.toVideoCode() = videoUrlRegex.find(this)?.groupValues?.get(1)

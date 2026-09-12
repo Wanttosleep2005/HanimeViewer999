@@ -1,5 +1,6 @@
 package io.github.daisukikaffuchino.han1meviewer.logic
 
+import io.github.daisukikaffuchino.han1meviewer.HanimeConstants
 import io.github.daisukikaffuchino.han1meviewer.HorizontalCardCountConfig
 import io.github.daisukikaffuchino.han1meviewer.SearchGridColumnsConfig
 import io.github.daisukikaffuchino.han1meviewer.logic.model.AppLanguage
@@ -56,12 +57,20 @@ object SettingsRepository : SettingsStore {
     val showPlayedIndicator get() = current.showPlayedIndicator
     val isCheckInEnabled get() = current.checkInEnabled
     val fakeLauncherIcon get() = current.fakeLauncherIcon
+    /**
+     * 当前站点根地址。自定义镜像优先。
+     *
+     * ⚠️ 最后那道 [`sanitizeDomain`] 不是多余的：`domainName` 是**持久化**的，
+     * mod 7.0 移除了 javchu.com，老用户的设置里还留着 `https://javchu.com/`。
+     * 不做兜底的话，升级后 baseUrl 会指向一个已经不存在的站，表现为首页/详情全线
+     * 加载失败，而设置页里还显示着一个列表里根本没有的域名。
+     */
     val baseUrl: String get() {
         if (current.useCustomMirrorSite && current.customMirrorSite.isNotBlank()) {
             val value = if (current.appendCustomMirrorPath) current.customMirrorSite else rootUrl(current.customMirrorSite)
             return value.withTrailingSlash()
         }
-        return current.domainName
+        return sanitizeDomain(current.domainName)
     }
     val homeUrl get() = if (current.useCustomMirrorSite && current.customMirrorSite.isNotBlank()) current.customMirrorSite else baseUrl
     val useCustomMirrorSite get() = current.useCustomMirrorSite
@@ -87,6 +96,8 @@ object SettingsRepository : SettingsStore {
     val proxyType get() = current.proxyType.id
     val proxyIp get() = current.proxyIp
     val proxyPort get() = current.proxyPort
+    val proxyUsername get() = current.proxyUsername
+    val proxyPassword get() = current.proxyPassword
     val downloadCountLimit get() = current.downloadCountLimit
     val collapseDownloadedGroup get() = current.collapseDownloadedGroup
     val isUsePrivateStorage get() = current.usePrivateStorage
@@ -149,4 +160,17 @@ object SettingsRepository : SettingsStore {
 
     private fun String.withTrailingSlash() = if (endsWith('/')) this else "$this/"
     private fun rootUrl(value: String) = runCatching { URI(value).let { "${it.scheme}://${it.rawAuthority}" } }.getOrDefault(value)
+
+    /**
+     * 校准持久化的域名：不在已知站点集合里就退回默认镜像。
+     *
+     * 目前唯一会命中的场景是老用户设置里残留的 `javchu.com`（mod 7.0 已下线整站），
+     * 以及用户手改过的非法值。**只做只读兜底，不改写存储** —— 这样即使用户哪天
+     * 想切回去（比如我们自己又加回来），原值还在。
+     */
+    private fun sanitizeDomain(value: String): String {
+        if (value.isBlank()) return HanimeConstants.HANIME_URL[0]
+        if ((value.trimEnd('/') + "/") in HanimeConstants.ALL_URLS) return value
+        return HanimeConstants.HANIME_URL[0]
+    }
 }
