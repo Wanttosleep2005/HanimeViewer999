@@ -78,6 +78,7 @@ import io.github.daisukikaffuchino.utils.ActivityManager
 import io.github.daisukikaffuchino.utils.folderSize
 import io.github.daisukikaffuchino.utils.LogUtil
 import io.github.daisukikaffuchino.utils.SonnerToast
+import io.github.daisukikaffuchino.utils.InstallResult
 import io.github.daisukikaffuchino.utils.installUpdateApk
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -507,8 +508,20 @@ fun HomeSettingsRouteScreen(
                 when (val workState = updateWorkState) {
                     // 已经下好了 → 直接装（授权被拒过的话就是在这里重试）
                     is AppUpdateWorkState.Finished -> {
-                        if (!activity.installUpdateApk(workState.apkFile)) {
-                            SonnerToast.error(R.string.update_install_permission_required)
+                        when (val install = activity.installUpdateApk(workState.apkFile)) {
+                            InstallResult.Started -> Unit
+
+                            InstallResult.PermissionRequired ->
+                                SonnerToast.error(R.string.update_install_permission_required)
+
+                            is InstallResult.BrokenPackage -> {
+                                // 坏包已被清掉。这里立刻把本地状态拉回 Idle，
+                                // 让按钮回到「立即更新」—— 否则它会一直停在「立即安装」，
+                                // 用户点几次都只是再看到同一句错误。
+                                LogUtil.e("HomeSettings", "更新包不可用：${install.reason}")
+                                updateWorkState = AppUpdateWorkState.Idle
+                                SonnerToast.error(R.string.update_package_broken)
+                            }
                         }
                     }
 

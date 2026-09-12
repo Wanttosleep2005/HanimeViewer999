@@ -136,6 +136,13 @@ object SettingsRepository : SettingsStore {
      * 它在每次图片请求时读取，所以**改设置立即生效，不用重启**。
      */
     val allowImageRelay get() = current.allowImageRelay
+    /**
+     * 是否允许被封 CDN（hanime 视频/封面、nJAV 封面）走自建 TLS 中转。
+     *
+     * 读取处是 [io.github.daisukikaffuchino.han1meviewer.logic.network.interceptor.CdnRelayInterceptor]，
+     * 每次请求都读，所以改设置立即生效、不用重启。
+     */
+    val allowCdnRelay get() = current.allowCdnRelay
 
     suspend fun setLoginState(value: Boolean) = update { it.copy(isAlreadyLogin = value) }
     suspend fun dismissLocalListNotice() = update { it.copy(localListNoticeDismissed = true) }

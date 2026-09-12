@@ -196,6 +196,8 @@ Some mirrors may not support login, may not share cookies, may fail verification
     <string name="custom_hosts_empty_summary">Not set (using built-in mapping)</string>
     <string name="use_doh">Use DoH</string>
     <string name="allow_image_relay">Relay blocked cover images</string>
+    <string name="allow_cdn_relay">Relay blocked video / covers (self-hosted)</string>
+    <string name="allow_cdn_relay_summary">Videos and covers live on vdownload.hembed.com, which is unreachable from mainland China. A plain proxy does NOT help here — TLS SNI is cleartext, so the tunnel&#8217;s contents are inspected and reset anyway. Traffic is therefore sent to your own server, which fetches it and streams it back.\nTurning this off means videos will not play.</string>
     <string name="allow_image_relay_summary">Covers are hosted on blocked domains (vdownload.hembed.com, fourhoi.com), so a direct request fails. Direct connection is always tried first; only on failure is the image fetched through a third-party image proxy.\nTurning this off leaves those covers blank.</string>
     <string name="doh_settings">DoH Settings</string>
     <string name="doh_preset">DoH Preset</string>
@@ -455,6 +457,7 @@ Recommendations are as follows:\n
     <string name="node_latency_sum">Enable built-in Hosts to detect latency\nDo not enable actual address resolution</string>
     <string name="builtin_dns">Built-in DNS mapping</string>
     <string name="image_relay_section">Cover images</string>
+    <string name="cdn_relay_section">CDN relay (videos &amp; covers)</string>
     <string name="test_doh">Test DoH</string>
     <string name="test_doh_summary">Check whether current DoH settings can resolve the domain</string>
     <string name="doh_test_result">DoH Test Result</string>
@@ -718,6 +721,7 @@ Recommendations are as follows:\n
     <string name="update_install_now">Install now</string>
     <string name="update_download_failed">Update download failed. Please retry.</string>
     <string name="update_install_permission_required">Allow this app to install unknown apps, then tap Install again.</string>
+    <string name="update_package_broken">The update package is corrupt and cannot be installed (usually caused by an interrupted download). It has been cleared — tap Update again to download it once more.</string>
     <string name="settings_video_playback">Video playback preferences</string>
     <string name="settings_video_playback_summary">Video display and playback behavior preferences</string>
     <string name="settings_player_summary">Playback engine, subtitles and advanced player options</string>

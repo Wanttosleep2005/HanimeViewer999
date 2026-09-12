@@ -1,8 +1,10 @@
 package io.github.daisukikaffuchino.han1meviewer.logic.njav
 
+import io.github.daisukikaffuchino.han1meviewer.logic.network.CdnRelay
 import io.github.daisukikaffuchino.han1meviewer.logic.network.HProxyAuthenticator
 import io.github.daisukikaffuchino.han1meviewer.logic.network.HDns
 import io.github.daisukikaffuchino.han1meviewer.logic.network.HProxySelector
+import io.github.daisukikaffuchino.han1meviewer.logic.network.interceptor.CdnRelayInterceptor
 import io.github.daisukikaffuchino.utils.unsafeLazy
 import okhttp3.Interceptor
 import okhttp3.OkHttpClient
@@ -75,6 +77,11 @@ object PlaybackHttpClient {
             .dns(HDns())
             .proxySelector(HProxySelector())
             .proxyAuthenticator(HProxyAuthenticator.http)
+            // 中转证书是自签的（钉在 APK 里），必须自带信任链。
+            .sslSocketFactory(CdnRelay.sslContext.socketFactory, CdnRelay.trustManager)
+            // 被封 CDN（hanime 视频）改道自建中转；详见 CdnRelay 的类注释。
+            // 放在最前：它要么原样放行，要么整体换成中转地址，不会和别的拦截器相互干扰。
+            .addInterceptor(CdnRelayInterceptor())
             .addNetworkInterceptor(NjavPlaybackInterceptor())
             .build()
     }

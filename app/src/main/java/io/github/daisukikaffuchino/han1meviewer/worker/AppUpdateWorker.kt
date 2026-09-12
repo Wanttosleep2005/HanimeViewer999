@@ -170,7 +170,10 @@ class AppUpdateWorker(
 
         setForeground(createForegroundInfo(DownloadProgress(percent = null, bytes = 0L)))
         return try {
-            AppUpdateDownloader.download(url) { progress ->
+            // targetVersionCode 不只是「下完记一笔」，它还会被下载器用来做两道判据：
+            // 续传前确认盘里的半成品属于这个版本、下完后核对包内声明的 versionCode。
+            // 见 AppUpdateDownloader.dropCacheIfForeign / verifyApkBySystemParser。
+            AppUpdateDownloader.download(url, targetVersionCode) { progress ->
                 setProgress(
                     workDataOf(
                         KEY_PROGRESS to (progress.percent ?: PROGRESS_UNKNOWN),

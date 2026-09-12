@@ -24,7 +24,9 @@ import io.github.daisukikaffuchino.han1meviewer.ui.screen.home.homepage.HomePage
 import io.github.daisukikaffuchino.han1meviewer.ui.screen.home.homepage.HomePageViewModel
 import io.github.daisukikaffuchino.han1meviewer.ui.screen.home.homepage.HomeUiEvent
 import io.github.daisukikaffuchino.han1meviewer.ui.screen.home.homepage.LocalSearchHistoryQuery
+import io.github.daisukikaffuchino.utils.InstallResult
 import io.github.daisukikaffuchino.utils.installUpdateApk
+import io.github.daisukikaffuchino.utils.LogUtil
 import io.github.daisukikaffuchino.utils.rememberCopyTextToClipboard
 import io.github.daisukikaffuchino.han1meviewer.ui.viewmodel.CheckInCalendarViewModel
 import io.github.daisukikaffuchino.utils.SonnerToast
@@ -57,6 +59,30 @@ fun HomeRouteScreen(
     val updateDownloadState by viewModel.updateDownloadState.collectAsStateWithLifecycle()
 
     /**
+     * 拉起安装器，并按三种结果分别收尾。
+     *
+     * 关键在第三种：包不可用（多半是下载时被续传逻辑拼坏了，见 `AppUpdateDownloader`）时
+     * 光弹一句错误是不够的 —— 坏包已被清掉，若不把下载状态一并复位，卡片会一直停在
+     * 「立即安装」，用户点多少次都只会再看到同一句错误。复位后卡片回到「立即更新」，
+     * 点一下就是一次干净的重下。
+     */
+    fun installOrReport(apkFile: java.io.File) {
+        when (val install = activity.installUpdateApk(apkFile)) {
+            InstallResult.Started -> Unit
+
+            // 缺「安装未知应用」权限 —— 已经跳去授权页，授权后回来再点「立即安装」
+            InstallResult.PermissionRequired ->
+                SonnerToast.error(R.string.update_install_permission_required)
+
+            is InstallResult.BrokenPackage -> {
+                LogUtil.e("HomeRoute", "更新包不可用，已复位下载状态：${install.reason}")
+                viewModel.clearUpdateDownloadState()
+                SonnerToast.error(R.string.update_package_broken)
+            }
+        }
+    }
+
+    /**
      * 包下好之后自动拉起一次安装器。
      *
      * 用 `LaunchedEffect` 而不是直接在事件回调里装：下载是异步的，完成时机不确定；
@@ -70,10 +96,7 @@ fun HomeRouteScreen(
         val path = readyApk?.absolutePath ?: return@LaunchedEffect
         if (autoInstallTriggeredFor == path) return@LaunchedEffect
         autoInstallTriggeredFor = path
-        if (!activity.installUpdateApk(readyApk)) {
-            // 缺「安装未知应用」权限 —— 已经跳去授权页，授权后回来再点「立即安装」
-            SonnerToast.error(R.string.update_install_permission_required)
-        }
+        installOrReport(readyApk)
     }
 
     CompositionLocalProvider(
@@ -103,9 +126,7 @@ fun HomeRouteScreen(
                             // 已经下好了 → 直接装（授权被拒过的话就是在这里重试）
                             is HomePageViewModel.UpdateDownloadState.ReadyToInstall -> {
                                 autoInstallTriggeredFor = state.apkFile.absolutePath
-                                if (!activity.installUpdateApk(state.apkFile)) {
-                                    SonnerToast.error(R.string.update_install_permission_required)
-                                }
+                                installOrReport(state.apkFile)
                             }
                             // 下载中：按钮此时是禁用的，这里兜底
                             is HomePageViewModel.UpdateDownloadState.Downloading,

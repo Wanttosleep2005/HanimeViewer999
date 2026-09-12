@@ -64,6 +64,23 @@ object AppUpdateDownloader {
     private const val APK_NAME = "update.apk"
 
     /**
+     * 落点的「身份」旁注：记录这个半成品究竟属于哪个 URL / 哪个 versionCode。
+     *
+     * ⚠️ **别删。** `update.apk` 是一个**固定文件名、跨版本复用**的缓存文件，而它的续传
+     * 判据只有一条「文件有多长」。万一盘里躺着的是**另一个版本**的包，`Range: bytes=<旧长度>-`
+     * 就会把新版本的尾巴接到旧版本的头上，拼出一个「长度恰好等于目标、文件头也还是
+     * `PK\x03\x04`」的四不像。应用侧那三道校验（非空 / 长度 / PK 魔数）**全部通过**，
+     * 一直到系统安装器才炸 —— 用户看到的就是「明明下载 100% 了，装的时候说解析包错误」。
+     *
+     * 实测（本地构造，2026-09-12）：前 28 879 837 字节取旧版包、其余取新版包拼起来，
+     * 长度与非空、PK 魔数全过，而 zip 解析器直接 `Bad magic number for central directory`，
+     * aapt2 报 `failed opening zip: Invalid file.` —— 与系统安装器的报错同一通路。
+     *
+     * 见 [dropCacheIfForeign]。
+     */
+    private const val META_NAME = "update.apk.meta"
+
+    /**
      * 单个源的「零字节」容忍时长。
      *
      * OkHttp 的 `readTimeout` 语义正是「两次数据到达之间的最大间隔」，所以这个值等于
@@ -119,11 +136,55 @@ object AppUpdateDownloader {
 
     fun updateApkFile(): File = File(applicationContext.cacheDir, APK_NAME)
 
+    /** 身份旁注文件的句柄（内容两行：下载 URL、目标 versionCode）。 */
+    private fun apkMetaFile(): File = File(applicationContext.cacheDir, META_NAME)
+
     /** 已下载好的更新包（存在且非空）才返回，否则 null。 */
     fun existingApkFileOrNull(): File? = updateApkFile().takeIf { it.isFile && it.length() > 0L }
 
     fun clearApkFile() {
         runCatching { updateApkFile().delete() }
+        runCatching { apkMetaFile().delete() }
+    }
+
+    /** 记下当前落点属于谁。失败不致命 —— 只是退回「每次全量重下」的老行为。 */
+    private fun writeIdentity(url: String, versionCode: Int) {
+        runCatching { apkMetaFile().writeText("$url\n$versionCode") }
+    }
+
+    /** 读回身份；没有旁注（老版本残留的半截文件）就返回 null。 */
+    private fun readIdentity(): Pair<String, Int>? = runCatching {
+        val lines = apkMetaFile().readLines()
+        if (lines.size < 2) null else lines[0] to lines[1].trim().toInt()
+    }.getOrNull()
+
+    /**
+     * 身份守卫：盘里那个半成品**必须**属于本次要下的这个包，否则一律丢弃、从零重下。
+     *
+     * 这就是「下载成功却报解析包错误」的根治点。续传本身没问题，问题是此前只按字节数
+     * 续 —— 字节数是会撞车的：7.5 的包 28 877 749 字节、7.6 的包 28 884 357 字节，
+     * 只要盘里留着 7.5 的完整包，`Range: bytes=28877749-` 就能被服务端**正常**接受
+     * （206 + 6 608 字节），拼完之后长度验证恰好成立。多下来的代价是几十 KB，
+     * 换来的是一个装不上的包。
+     *
+     * 没有旁注文件（升级自旧版本、或旁注被清了）时宁可保守：直接丢弃重下。
+     * 28 MB 换一个「不可能装错」，值。
+     */
+    private fun dropCacheIfForeign(url: String, versionCode: Int?) {
+        val file = updateApkFile()
+        if (!file.isFile || file.length() <= 0L) return
+
+        val identity = readIdentity()
+        val sameUrl = identity?.first == url
+        val sameVersion = versionCode == null || identity?.second == versionCode
+        if (sameUrl && sameVersion) return
+
+        LogUtil.w(
+            TAG,
+            "落点里的半成品不属于本次目标（旁注 ${identity?.first}/${identity?.second}，" +
+                "目标 $url/$versionCode），丢弃后从零下载"
+        )
+        clearApkFile()
     }
 
     /**
@@ -159,6 +220,10 @@ object AppUpdateDownloader {
     /**
      * 下载更新包到 [updateApkFile]，依次尝试官方源与各镜像，第一个成功即返回。
      *
+     * @param expectedVersionCode `update.json` 里声明的目标 `versionCode`，用来干两件事：
+     *   1) 续传之前判断盘里的半成品是不是同一个包（见 [dropCacheIfForeign]）；
+     *   2) 下完之后核对包内声明的 `versionCode`（见 [verifyApkBySystemParser]）。
+     *   传 null 时只做「系统能不能解析这个包」这一层。
      * @param onProgress 进度回调。**开工时（还没收到任何数据）就会先回调一次**
      *   `DownloadProgress(percent = null, bytes = 已有字节数)` —— 这是刻意为之：
      *   否则「服务端迟迟不给 `Content-Length`」和「请求根本没发出去」在界面上长得一模一样，
@@ -169,9 +234,14 @@ object AppUpdateDownloader {
      */
     suspend fun download(
         url: String,
+        expectedVersionCode: Int? = null,
         onProgress: (suspend (DownloadProgress) -> Unit)? = null,
     ): File =
         withContext(Dispatchers.IO) {
+            // ⚠️ 顺序不能反：先确认盘里的半成品属于这次要下的包，再把它标成「属于本次」。
+            dropCacheIfForeign(url, expectedVersionCode)
+            writeIdentity(url, expectedVersionCode ?: 0)
+
             val candidates = candidateUrls(url)
             var lastError: Throwable? = null
 
@@ -183,7 +253,7 @@ object AppUpdateDownloader {
                 }
 
                 repeat(ATTEMPTS_PER_SOURCE) { attempt ->
-                    val result = runCatching { downloadFrom(candidate, onProgress) }
+                    val result = runCatching { downloadFrom(candidate, expectedVersionCode, onProgress) }
                     result.getOrNull()?.let { file ->
                         LogUtil.d(
                             TAG,
@@ -212,6 +282,7 @@ object AppUpdateDownloader {
     /** 从**单个**源下载（支持断点续传）。任何异常都向上抛，由 [download] 决定重试或换源。 */
     private suspend fun downloadFrom(
         url: String,
+        expectedVersionCode: Int?,
         onProgress: (suspend (DownloadProgress) -> Unit)?,
     ): File {
         val file = updateApkFile()
@@ -246,6 +317,23 @@ object AppUpdateDownloader {
             val bodyLength = body.contentLength()
             // 206 = 服务端接受了 Range，可以接着写；200 = 不支持 Range，只能从头来
             val resuming = response.code == 206 && alreadyBytes > 0L
+
+            // ⚠️ 206 只代表「我按 Range 回了一段」，**不代表**这一段的起点就是我们要的那个偏移。
+            // 有的加速镜像会把 Range 忽略掉、或者把 Content-Range 写错，于是我们会在错误的
+            // 基址上追加数据 —— 长度照样凑得对，包却是坏的（只有系统安装器会发现）。
+            // 这里显式核对 Content-Range 的起点，不符就删文件重下，绝不带病继续。
+            if (resuming) {
+                val rangeStart = response.header("Content-Range")
+                    ?.substringAfter("bytes", "")
+                    ?.trim()
+                    ?.substringBefore('-')
+                    ?.trim()
+                    ?.toLongOrNull()
+                if (rangeStart != null && rangeStart != alreadyBytes) {
+                    file.delete()
+                    throw IOException("续传起点与请求不符（请求 $alreadyBytes，服务端给了 $rangeStart），已丢弃重下")
+                }
+            }
             val total = when {
                 !resuming -> bodyLength
                 bodyLength > 0 -> alreadyBytes + bodyLength
@@ -315,6 +403,40 @@ object AppUpdateDownloader {
             throw IOException("更新包不是合法的 APK（文件头异常）")
         }
 
+        // 最后一道闸：把包交给**系统自己的解析器**验一遍。
+        // 上面三道都是「拿字节比大小/比前两位」，挡不住「两个版本的字节拼接」这类结构性损坏 ——
+        // 而系统安装器用的正是下面这个解析器：它认了，安装器才不会报「解析安装包错误」。
+        verifyApkBySystemParser(file, expectedVersionCode)
+
         return file
+    }
+
+    /**
+     * 用系统解析器（`PackageManager.getPackageArchiveInfo`）自检刚下完的包。
+     *
+     * 为什么一定要走系统解析器、而不是自己解 zip：安装器判「能不能装」用的就是同一套
+     * `PackageParser`，只有它能给出「装得上」这个结论。任何结构性损坏（拼接、截断、
+     * 中央目录被改）在这里都会变成 null，或包名 / `versionCode` 对不上。
+     *
+     * 不通过时**先删文件再抛异常**：上层重试就成了一次干净的全量下载，而不是继续往坏文件上续。
+     */
+    private fun verifyApkBySystemParser(file: File, expectedVersionCode: Int?) {
+        val context = applicationContext
+        @Suppress("DEPRECATION")
+        val info = runCatching { context.packageManager.getPackageArchiveInfo(file.absolutePath, 0) }
+            .getOrNull()
+
+        fun reject(reason: String): Nothing {
+            LogUtil.e(TAG, "更新包自检未通过：$reason（${file.length()} 字节，已删除）")
+            clearApkFile()
+            throw IOException("更新包自检未通过：$reason")
+        }
+
+        if (info == null) reject("系统无法解析该文件（zip 结构损坏、被拼接或被截断）")
+        if (info.packageName != context.packageName) reject("包名不符（包内是 ${info.packageName}）")
+        val actualVersionCode = info.longVersionCode.toInt()
+        if (expectedVersionCode != null && actualVersionCode != expectedVersionCode) {
+            reject("版本不符（包内是 $actualVersionCode，期望 $expectedVersionCode）")
+        }
     }
 }

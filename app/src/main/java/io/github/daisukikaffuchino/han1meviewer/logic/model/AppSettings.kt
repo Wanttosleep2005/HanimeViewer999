@@ -183,6 +183,19 @@ data class AppSettings(
      * **只对图片扩展名生效**，视频链路不会被送去第三方（中转服务本身也只处理图片）。
      */
     val allowImageRelay: Boolean = true,
+    /**
+     * 允许被封 CDN（hanime 视频与封面、nJAV 封面）走**自建** TLS 中转（默认开）。
+     *
+     * 与 [allowImageRelay] 是「同类问题的两代方案」：
+     * - [allowImageRelay] 只能救图片，且会把图片 URL 交给第三方 `wsrv.nl`；
+     * - 本开关走用户自己的服务器，图片和**视频**都能过，URL 不外泄。
+     *
+     * ⚠️ 关掉它的直接后果是**视频完全看不了**（`vdownload.hembed.com` 在内地不可达，
+     * 且普通代理无效 —— TLS 的 SNI 是明文，墙在明文隧道里照样 RST，见
+     * [io.github.daisukikaffuchino.han1meviewer.logic.network.CdnRelay]）。
+     * 留这个开关只是给「线路本来就能直连」的用户省一次绕行。
+     */
+    val allowCdnRelay: Boolean = true,
     val proxyType: ProxyType = ProxyType.System,
     val proxyIp: String = "",
     val proxyPort: Int = -1,

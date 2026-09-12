@@ -56,6 +56,8 @@ data class NetworkSettingsUiState(
     val delaySummary: String,
     /** 是否允许封面图走第三方中转（直连失败时兜底）。 */
     val allowImageRelay: Boolean,
+    /** 是否允许被封 CDN（视频/封面）走自建 TLS 中转。关掉等于看不了视频。 */
+    val allowCdnRelay: Boolean,
 )
 
 data class DelayResultUi(
@@ -126,6 +128,7 @@ fun NetworkSettingsScreen(
     onTestCustomMirrorSite: (String, Boolean) -> Unit,
     onUseBuiltInHostsChange: (Boolean) -> Unit,
     onAllowImageRelayChange: (Boolean) -> Unit,
+    onAllowCdnRelayChange: (Boolean) -> Unit,
     onSaveCustomHosts: (String) -> Unit,
     onSaveDohSettings: (Boolean, String, String, String, Int) -> Unit,
     onOpenDelayTest: () -> Unit,
@@ -303,8 +306,15 @@ fun NetworkSettingsScreen(
                 )
             }
 
-            SettingsSectionTitle(titleRes = R.string.image_relay_section)
+            SettingsSectionTitle(titleRes = R.string.cdn_relay_section)
             SettingsSegmentedGroup {
+                SettingSwitchItem(
+                    title = stringResource(R.string.allow_cdn_relay),
+                    summary = stringResource(R.string.allow_cdn_relay_summary),
+                    checked = state.allowCdnRelay,
+                    iconRes = R.drawable.ic_vpn,
+                    onCheckedChange = onAllowCdnRelayChange,
+                )
                 SettingSwitchItem(
                     title = stringResource(R.string.allow_image_relay),
                     summary = stringResource(R.string.allow_image_relay_summary),
@@ -870,6 +880,7 @@ private fun NetworkSettingsScreenPreview() {
                 dohSummary = "关闭",
                 delaySummary = "启用内建Hosts后可侦测延迟状况\n不启用为实际解析位址",
                 allowImageRelay = true,
+                allowCdnRelay = true,
             ),
             domainOptions = listOf(
                 "hanime1.me (默认)" to "https://hanime1.me/",
@@ -908,6 +919,7 @@ private fun NetworkSettingsScreenPreview() {
             onTestCustomMirrorSite = { _, _ -> },
             onUseBuiltInHostsChange = {},
             onAllowImageRelayChange = {},
+            onAllowCdnRelayChange = {},
             onSaveCustomHosts = {},
             customHostsData = "",
             onSaveDohSettings = { _, _, _, _, _ -> },

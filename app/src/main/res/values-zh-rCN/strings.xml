@@ -196,6 +196,8 @@
     <string name="custom_hosts_empty_summary">未设定（使用内置映射）</string>
     <string name="use_doh">使用 DoH</string>
     <string name="allow_image_relay">封面图第三方中转</string>
+    <string name="allow_cdn_relay">视频 / 封面自建中转</string>
+    <string name="allow_cdn_relay_summary">视频和封面都在 vdownload.hembed.com 上，内地不可达。注意：普通代理救不了它 —— TLS 的 SNI 是明文，墙在明文隧道里就能读到并掐断。所以这里改走你自己的服务器：由服务器去取，再回传给你。\n关掉就没法看视频了。</string>
     <string name="allow_image_relay_summary">本站封面图放在被封的域名上（vdownload.hembed.com、fourhoi.com），直连必然失败。开启后仍会先走直连，只有失败时才借第三方图片中转取回封面。\n关闭后这些封面会显示为空（不影响其他图源）。</string>
     <string name="doh_settings">DoH 设置</string>
     <string name="doh_preset">DoH 预设</string>
@@ -460,6 +462,7 @@
     <string name="node_latency_sum">启用内置Hosts后可检测延迟情况\n不启用为实际解析地址</string>
     <string name="builtin_dns">内置DNS映射</string>
     <string name="image_relay_section">封面图</string>
+    <string name="cdn_relay_section">CDN 中转（视频 / 封面）</string>
     <string name="test_doh">测试 DoH</string>
     <string name="test_doh_summary">检查当前 DoH 配置是否可解析域名</string>
     <string name="doh_test_result">DoH 测试结果</string>
@@ -702,6 +705,7 @@
     <string name="update_install_now">立即安装</string>
     <string name="update_download_failed">更新包下载失败，请重试</string>
     <string name="update_install_permission_required">请先允许本应用安装未知来源应用，然后再次点击「立即安装」</string>
+    <string name="update_package_broken">更新包已损坏、装不了（多半是下载中途断过被拼坏了）。已自动清理，请重新点「立即更新」下载一次</string>
     <string name="settings_video_playback">影片播放偏好</string>
     <string name="settings_video_playback_summary">影片显示与播放行为偏好</string>
     <string name="settings_player_summary">播放内核、字幕与播放器高级选项</string>

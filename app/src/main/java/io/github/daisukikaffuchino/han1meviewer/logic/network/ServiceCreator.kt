@@ -2,6 +2,7 @@ package io.github.daisukikaffuchino.han1meviewer.logic.network
 
 import io.github.daisukikaffuchino.han1meviewer.logic.network.HProxyAuthenticator
 import io.github.daisukikaffuchino.han1meviewer.logic.SettingsRepository
+import io.github.daisukikaffuchino.han1meviewer.logic.network.interceptor.CdnRelayInterceptor
 import io.github.daisukikaffuchino.han1meviewer.logic.network.interceptor.CloudflareInterceptor
 import io.github.daisukikaffuchino.han1meviewer.logic.network.interceptor.GetchuInterceptor
 import io.github.daisukikaffuchino.han1meviewer.logic.network.interceptor.SpeedLimitInterceptor
@@ -99,8 +100,12 @@ object ServiceCreator {
             // 30 s 与 HLS 下载链路（hlsClient）保持一致。
             .readTimeout(30, TimeUnit.SECONDS)
             .protocols(listOf(Protocol.HTTP_1_1))
+            .sslSocketFactory(CdnRelay.sslContext.socketFactory, CdnRelay.trustManager)
             .addInterceptor(UserAgentInterceptor)
             .addInterceptor(downloadSpeedLimitInterceptor)
+            // 放在限速之后：限速拦的是「读正文」的节奏，中转改写的是 URL，
+            // 顺序反过来会让限速把那一次直连失败的重试也算进配额，纯属浪费。
+            .addInterceptor(CdnRelayInterceptor())
             .addNetworkInterceptor(NjavPlaybackInterceptor())
             .proxySelector(HProxySelector())
             .proxyAuthenticator(HProxyAuthenticator.http)
