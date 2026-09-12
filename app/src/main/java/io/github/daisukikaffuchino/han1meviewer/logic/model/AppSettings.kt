@@ -199,6 +199,22 @@ data class AppSettings(
      * 留这个开关只是给「线路本来就能直连」的用户省一次绕行。
      */
     val allowCdnRelay: Boolean = true,
+    /**
+     * 额外的中转节点（JSON 数组，见 [io.github.daisukikaffuchino.han1meviewer.logic.network.RelayNodeStore]）。
+     *
+     * **内置节点不在这里** —— 它写死在代码里且不可删除，本字段只存用户自己加的。
+     * 存 JSON 而不是拆成多列，是因为节点是「整条增删」的集合，拆列反而要在
+     * DataStore 里模拟一张表。
+     */
+    val relayNodesJson: String = "",
+    /** 手动指定的中转节点 id；空字符串 = 自动优选。 */
+    val activeRelayNodeId: String = "",
+    /**
+     * 是否按健康检查结果自动优选节点（默认开）。
+     *
+     * 关掉后会一直用手动选中的那个（没手动选过就用内置节点），哪怕它明显更慢。
+     */
+    val autoSelectRelayNode: Boolean = true,
     val proxyType: ProxyType = ProxyType.System,
     val proxyIp: String = "",
     val proxyPort: Int = -1,

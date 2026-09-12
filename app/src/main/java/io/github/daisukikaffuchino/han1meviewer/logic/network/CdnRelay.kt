@@ -10,10 +10,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.OkHttpClient
-import okhttp3.Request
 import java.security.KeyStore
 import java.security.cert.CertificateFactory
 import java.security.cert.X509Certificate
@@ -75,8 +73,12 @@ object CdnRelay {
     private const val TAG = "CdnRelay"
 
     /**
-     * 中转端点。写死在 APK 里（用户自建，不打算公开分发），
+     * **内置**中转端点。写死在 APK 里（用户自建，不打算公开分发），
      * 通过「网络设置 → CDN 中转」开关控制是否启用。
+     *
+     * ⚠️ 9.0 起实际生效的端点由 [RelayNodeStore] 决定（可能在池里换了别的节点）；
+     * 这两个常量只代表**内置节点**，也是「一个自建节点都没有」时的兜底。
+     * 保留它们而不是删掉，是为了保证升级上来的用户连接目标**一个字节都不变**。
      */
     const val HOST = "186.241.94.98"
     const val PORT = 7443
@@ -84,8 +86,10 @@ object CdnRelay {
     /**
      * 路径口令。中转只允许取 [BLOCKED_HOSTS] 里的域名，所以即使这个值泄露，
      * 别人最多也只能拿它当一个「hembed 专用代理」，无法当开放代理滥用。
+     *
+     * `internal` 而非 `private`：`RelayNodeStore` 要用它构造内置节点。
      */
-    private const val SECRET = "tGb5QULX7mDx71kW5wV68p3zhCzYxRRv"
+    internal const val SECRET = "tGb5QULX7mDx71kW5wV68p3zhCzYxRRv"
 
     /** 路径前缀，与服务器 `/r/<secret>/<base64url>` 约定一致。 */
     private const val PATH_ROOT = "r"
@@ -135,16 +139,20 @@ object CdnRelay {
      *
      * base64url 的字母表是 `A-Za-z0-9-_`，不含 `/`，正好是**单个路径段**，
      * 也不会被 OkHttp 二次转义。
+     *
+     * ⚠️ 9.0 起端点由 [RelayNodeStore.activeNode] 决定。这里是**每个请求都会走**的热路径，
+     * 所以 `activeNode()` 特意做了「只有内置节点时直接返回、读设置都不读」的短路。
      */
     fun relayUrl(original: String): String? {
         // 先确认确实是个合法 URL：不然后面会带一个「永远取不到」的中转请求出去，
         // 报错还会显示成中转的问题，排查时容易被带偏。
         original.toHttpUrlOrNull() ?: return null
+        val node = runCatching { RelayNodeStore.activeNode() }.getOrElse { RelayNodeStore.builtInNode }
         val encoded = android.util.Base64.encodeToString(
             original.toByteArray(Charsets.UTF_8),
             android.util.Base64.URL_SAFE or android.util.Base64.NO_WRAP or android.util.Base64.NO_PADDING,
         )
-        return "https://$HOST:$PORT/$PATH_ROOT/$SECRET/$encoded".toHttpUrlOrNull()?.toString()
+        return "${node.baseUrl}/$PATH_ROOT/${node.secret}/$encoded".toHttpUrlOrNull()?.toString()
     }
 
     /**
@@ -225,7 +233,7 @@ object CdnRelay {
         override fun getAcceptedIssuers(): Array<X509Certificate> = accepted
     }
 
-    //<editor-fold desc="中转可达性探活（8.1）">
+    //<editor-fold desc="中转可达性探活（8.1 引入，9.0 移交给 RelayNodeStore）">
 
     /**
      * 「直连失败 → 走中转」这条路上有一个不明显的浪费：
@@ -234,7 +242,8 @@ object CdnRelay {
      * 那么每一次直连失败之后**还要再等一次中转超时**，才把错误抛给上层。
      * 播放一个视频会发几十上百个请求，这种「双倍等待」在用户眼里就是卡死。
      *
-     * 所以这里做一次**轻量探活**（`GET /ping`）并把结论缓存 [PROBE_TTL_MS]：
+     * 8.1 起这里做一次**轻量探活**（`GET /ping`）并缓存结论；9.0 引入节点池后，
+     * 缓存的粒度从「中转」变成「每个节点」，实现整体搬到了 [RelayNodeStore]：
      *
      * | [cachedReachable] | 行为 |
      * |---|---|
@@ -245,23 +254,11 @@ object CdnRelay {
      * ⚠️ 刻意用 `/ping` 而不是拿真实视频地址探：探活只需要证明「服务器活着、证书对得上」，
      * 不该为了一次探活去 CDN 上取字节（白耗流量，还可能被 CDN 侧当成异常请求）。
      */
-    @Volatile
-    private var probeResult: Boolean? = null
-
-    @Volatile
-    private var probeAt = 0L
-
-    /** 缓存有效期。太短等于隔几分钟白探一次；太长则服务器恢复后要等很久才恢复。 */
-    private const val PROBE_TTL_MS = 5 * 60_000L
-
-    /** 探活超时。中转要么秒回要么就是不通，5 s 足够。 */
-    private const val PROBE_TIMEOUT_MS = 5_000L
+    private val probeScope by unsafeLazy { CoroutineScope(SupervisorJob() + Dispatchers.IO) }
+    private val probeInFlight = AtomicBoolean(false)
 
     /** 失败复探的最小间隔，防止一堆请求同时失败时把探活打成风暴。 */
     private const val REPROBE_MIN_INTERVAL_MS = 30_000L
-
-    private val probeScope by unsafeLazy { CoroutineScope(SupervisorJob() + Dispatchers.IO) }
-    private val probeInFlight = AtomicBoolean(false)
 
     /**
      * 探活专用 client：**只有它自己用**，所以超时可以给得很短，
@@ -270,8 +267,11 @@ object CdnRelay {
      * 没有显式设 `proxySelector` —— OkHttp 默认走 `ProxySelector.getDefault()`，
      * 而 [io.github.daisukikaffuchino.han1meviewer.HanimeApplication] 已经在启动时把它
      * 换成了 [HProxySelector]，所以这里自动继承了用户配置的代理（线路本来就正常的用户不必额外绕）。
+     *
+     * `internal` 而非 `private`：节点池的健康检查复用它，免得再搭一套 TLS 配置
+     * （两份配置一旦漂移，就会出现「探活说通、实际连不上」这种最难查的不一致）。
      */
-    private val probeClient by unsafeLazy {
+    internal val probeClient by unsafeLazy {
         OkHttpClient.Builder()
             .connectTimeout(PROBE_TIMEOUT_MS, TimeUnit.MILLISECONDS)
             .readTimeout(PROBE_TIMEOUT_MS, TimeUnit.MILLISECONDS)
@@ -280,25 +280,16 @@ object CdnRelay {
             .build()
     }
 
-    /** 当前**已知**的可达性结论；`null` = 还没探过，或缓存已过期。 */
+    /** 探活超时。中转要么秒回要么就是不通，5 s 足够。 */
+    private const val PROBE_TIMEOUT_MS = 5_000L
+
+    /** 当前**生效节点**的可达性结论；`null` = 还没探过，或缓存已过期。 */
     val cachedReachable: Boolean?
-        get() = probeResult?.takeIf { System.currentTimeMillis() - probeAt < PROBE_TTL_MS }
+        get() = runCatching { RelayNodeStore.cachedActiveReachable }.getOrNull()
 
     /** 真正打一次 `/ping`。失败不抛，只会得到 `false`。 */
-    suspend fun probe(force: Boolean = false): Boolean {
-        if (!force) cachedReachable?.let { return it }
-        val ok = withContext(Dispatchers.IO) {
-            runCatching {
-                val request =
-                    Request.Builder().url("https://$HOST:$PORT/ping").get().build()
-                probeClient.newCall(request).execute().use { it.isSuccessful }
-            }.getOrDefault(false)
-        }
-        probeResult = ok
-        probeAt = System.currentTimeMillis()
-        LogUtil.i(TAG, "中转探活结果：${if (ok) "可达" else "不可达"}")
-        return ok
-    }
+    suspend fun probe(force: Boolean = false): Boolean =
+        runCatching { RelayNodeStore.checkActive(force = force) }.getOrDefault(false)
 
     /**
      * 启动时预热一次，让第一个视频请求不必先等一次探活超时。
@@ -309,13 +300,14 @@ object CdnRelay {
     }
 
     /**
-     * 中转请求刚失败时调用：**后台复探一次**，但**不立刻判死**。
+     * 中转请求刚失败时调用：**给当前节点记一次失败**，并在需要时后台复探。
      *
-     * 为什么不直接 `probeResult = false`：那样的后果是「一次网络抖动 → 中转被停用 5 分钟 →
-     * 视频彻底看不了」，代价远大于收益。真死了的话，这次复探会把它记成 false，
-     * 下一个请求就再也不会白绕了 —— 只慢一个请求。
+     * 为什么不直接判死：后果是「一次网络抖动 → 中转被停用 5 分钟 → 视频彻底看不了」，
+     * 代价远大于收益。所以失败计数要累积到阈值（见 [RelayNodeStore.reportFailure]），
+     * 而且自动优选开着时会**自动换到下一台**，不需要用户干预。
      */
     fun scheduleReprobe() {
+        runCatching { RelayNodeStore.reportFailure() }
         val now = System.currentTimeMillis()
         if (now - probeAt < REPROBE_MIN_INTERVAL_MS) return
         if (!probeInFlight.compareAndSet(false, true)) return
@@ -327,6 +319,9 @@ object CdnRelay {
             }
         }
     }
+
+    @Volatile
+    private var probeAt = 0L
 
     //</editor-fold>
 }

@@ -23,6 +23,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.daisukikaffuchino.han1meviewer.EMPTY_STRING
 import io.github.daisukikaffuchino.han1meviewer.HanimeConstants
 import io.github.daisukikaffuchino.han1meviewer.logic.SettingsRepository
+import io.github.daisukikaffuchino.han1meviewer.logic.model.RelayNodeValidation
 import io.github.daisukikaffuchino.han1meviewer.logic.model.SiteSource
 import io.github.daisukikaffuchino.han1meviewer.R
 import io.github.daisukikaffuchino.han1meviewer.logic.Parser
@@ -32,6 +33,7 @@ import io.github.daisukikaffuchino.han1meviewer.logic.network.HDns
 import io.github.daisukikaffuchino.han1meviewer.logic.network.HProxySelector
 import io.github.daisukikaffuchino.han1meviewer.logic.network.HanimeNetwork
 import io.github.daisukikaffuchino.han1meviewer.logic.network.NetworkDiagnostics
+import io.github.daisukikaffuchino.han1meviewer.logic.network.RelayNodeStore
 import io.github.daisukikaffuchino.han1meviewer.logic.network.ServiceCreator
 import io.github.daisukikaffuchino.han1meviewer.logic.state.WebsiteState
 import io.github.daisukikaffuchino.han1meviewer.logout
@@ -40,6 +42,8 @@ import io.github.daisukikaffuchino.han1meviewer.ui.screen.settings.DelayResultUi
 import io.github.daisukikaffuchino.han1meviewer.ui.screen.settings.DohTestResultUi
 import io.github.daisukikaffuchino.han1meviewer.ui.screen.settings.NetworkSettingsScreen
 import io.github.daisukikaffuchino.han1meviewer.ui.screen.settings.NetworkSettingsUiState
+import io.github.daisukikaffuchino.han1meviewer.ui.screen.settings.RelayNodeActions
+import io.github.daisukikaffuchino.han1meviewer.ui.screen.settings.RelayNodeUiState
 import io.github.daisukikaffuchino.utils.ActivityManager
 import io.github.daisukikaffuchino.utils.applicationContext
 import io.github.daisukikaffuchino.utils.SonnerToast
@@ -67,6 +71,11 @@ fun NetworkSettingsRouteScreen(embedded: Boolean = false) {
     var isDiagnosing by remember { mutableStateOf(false) }
     var diagReport by remember { mutableStateOf<DiagReport?>(null) }
     var diagJob by remember { mutableStateOf<Job?>(null) }
+    // ── 中转节点池 ──────────────────────────────────────────────
+    var showRelayNodes by remember { mutableStateOf(false) }
+    var isRelayNodeTesting by remember { mutableStateOf(false) }
+    var relayNodeVersion by remember { mutableIntStateOf(0) }
+    var lastNodeValidation by remember { mutableStateOf<RelayNodeValidation?>(null) }
     var showDomainRestartConfirm by remember { mutableStateOf(false) }
     var showHostsRestartConfirm by remember { mutableStateOf(false) }
     var showCustomHostsValidationError by remember { mutableStateOf<List<String>?>(null) }
@@ -199,6 +208,74 @@ fun NetworkSettingsRouteScreen(embedded: Boolean = false) {
             executor.shutdownNow()
         }
     }
+
+    /**
+     * 节点池的 UI 状态。
+     *
+     * [RelayNodeStore] 是普通 object 而不是 Flow（它要在 OkHttp 拦截器的热路径上被同步读取），
+     * 所以这里靠 [relayNodeVersion] 这个「手动版本号」在增删/测速后触发重算。
+     */
+    val relayNodeUi = remember(settings, relayNodeVersion, isRelayNodeTesting, lastNodeValidation, context) {
+        RelayNodeUiState(
+            nodes = RelayNodeStore.allNodes(),
+            health = RelayNodeStore.allHealth(),
+            activeNodeId = RelayNodeStore.activeNode().id,
+            autoSelect = SettingsRepository.autoSelectRelayNode,
+            testing = isRelayNodeTesting,
+            lastValidation = lastNodeValidation,
+            builtInName = context.getString(R.string.relay_node_builtin),
+        )
+    }
+
+    val relayNodeActions = RelayNodeActions(
+        onTest = {
+            if (!isRelayNodeTesting) {
+                isRelayNodeTesting = true
+                coroutineScope.launch {
+                    runCatching { RelayNodeStore.checkAll() }
+                        .onFailure { LogUtil.w("NET_DIAG", "节点测速失败：${it.message}") }
+                    isRelayNodeTesting = false
+                    relayNodeVersion++
+                }
+            }
+        },
+        onSelect = { id ->
+            coroutineScope.launch {
+                // 手动选了某台就把自动优选关掉 —— 否则「选了却没生效」会让人莫名其妙。
+                RelayNodeStore.selectNode(id)
+                SettingsRepository.setAutoSelectRelayNode(false)
+                relayNodeVersion++
+            }
+        },
+        onAutoSelectChange = { enabled ->
+            coroutineScope.launch {
+                SettingsRepository.setAutoSelectRelayNode(enabled)
+                relayNodeVersion++
+            }
+        },
+        onAdd = { host, port, secret, label ->
+            coroutineScope.launch {
+                val result = RelayNodeStore.addNode(
+                    host = host,
+                    port = port.toIntOrNull() ?: -1,
+                    secret = secret,
+                    label = label,
+                )
+                lastNodeValidation = result
+                relayNodeVersion++
+            }
+        },
+        onRemove = { id ->
+            coroutineScope.launch {
+                RelayNodeStore.removeNode(id)
+                relayNodeVersion++
+            }
+        },
+        onDismiss = {
+            showRelayNodes = false
+            lastNodeValidation = null
+        },
+    )
 
     NetworkSettingsScreen(
         state = uiState,
@@ -363,6 +440,22 @@ fun NetworkSettingsRouteScreen(embedded: Boolean = false) {
             val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
             clipboard.setPrimaryClip(android.content.ClipData.newPlainText("network-diag", text))
             SonnerToast.success(R.string.diag_copied)
+        },
+        showRelayNodes = showRelayNodes,
+        relayNodeUi = relayNodeUi,
+        relayNodeActions = relayNodeActions,
+        onOpenRelayNodes = {
+            showRelayNodes = true
+            lastNodeValidation = null
+            // 打开就顺手测一次：让面板一上来就有数据，而不是先显示一排「未测速」。
+            if (RelayNodeStore.allHealth().isEmpty() && !isRelayNodeTesting) {
+                isRelayNodeTesting = true
+                coroutineScope.launch {
+                    runCatching { RelayNodeStore.checkAll() }
+                    isRelayNodeTesting = false
+                    relayNodeVersion++
+                }
+            }
         },
         onOpenDelayTest = {
             val host =

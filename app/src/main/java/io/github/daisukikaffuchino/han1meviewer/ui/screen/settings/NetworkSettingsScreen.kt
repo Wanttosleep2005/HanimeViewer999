@@ -146,6 +146,11 @@ fun NetworkSettingsScreen(
     onOpenDiagnostics: () -> Unit = {},
     onDismissDiagnostics: () -> Unit = {},
     onCopyDiagReport: (DiagReport) -> Unit = {},
+    /** 中转节点池。 */
+    showRelayNodes: Boolean = false,
+    relayNodeUi: RelayNodeUiState = RelayNodeUiState(),
+    relayNodeActions: RelayNodeActions = RelayNodeActions(),
+    onOpenRelayNodes: () -> Unit = {},
     embedded: Boolean = false,
 ) {
     var showDomainDialog by rememberSaveable { mutableStateOf(false) }
@@ -266,6 +271,13 @@ fun NetworkSettingsScreen(
         )
     }
 
+    if (showRelayNodes) {
+        RelayNodesDialog(
+            state = relayNodeUi,
+            actions = relayNodeActions,
+        )
+    }
+
     val content: @Composable () -> Unit = {
         Column(modifier = Modifier.fillMaxWidth()) {
             if (embedded) {
@@ -339,6 +351,12 @@ fun NetworkSettingsScreen(
                     checked = state.allowImageRelay,
                     iconRes = R.drawable.ic_share,
                     onCheckedChange = onAllowImageRelayChange,
+                )
+                SettingNavigationItem(
+                    title = stringResource(R.string.relay_nodes),
+                    summary = stringResource(R.string.relay_nodes_summary),
+                    iconRes = R.drawable.ic_speed,
+                    onClick = onOpenRelayNodes,
                 )
             }
 

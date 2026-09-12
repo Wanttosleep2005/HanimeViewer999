@@ -146,6 +146,18 @@ object SettingsRepository : SettingsStore {
      * 每次请求都读，所以改设置立即生效、不用重启。
      */
     val allowCdnRelay get() = current.allowCdnRelay
+    /**
+     * 用户自建的中转节点（JSON）。内置节点不在这里，见
+     * [io.github.daisukikaffuchino.han1meviewer.logic.network.RelayNodeStore]。
+     */
+    val relayNodesJson get() = current.relayNodesJson
+    /** 手动指定的中转节点 id；空 = 自动优选。 */
+    val activeRelayNodeId get() = current.activeRelayNodeId
+    val autoSelectRelayNode get() = current.autoSelectRelayNode
+
+    suspend fun setRelayNodesJson(value: String) = update { it.copy(relayNodesJson = value) }
+    suspend fun setActiveRelayNodeId(value: String) = update { it.copy(activeRelayNodeId = value) }
+    suspend fun setAutoSelectRelayNode(value: Boolean) = update { it.copy(autoSelectRelayNode = value) }
 
     suspend fun setLoginState(value: Boolean) = update { it.copy(isAlreadyLogin = value) }
     suspend fun dismissLocalListNotice() = update { it.copy(localListNoticeDismissed = true) }
