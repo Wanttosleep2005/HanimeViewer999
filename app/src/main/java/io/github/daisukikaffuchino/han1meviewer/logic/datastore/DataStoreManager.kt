@@ -37,6 +37,7 @@ import kotlinx.coroutines.runBlocking
 object DataStoreManager : SettingsStore {
     private const val FILE_NAME = "settings"
     private const val SLIDE_MIGRATED = "slide_sensitivity_v2_migrated"
+    private const val NETWORK_FIX_MIGRATED = "network_connectivity_fix_v1"
     private val defaults = AppSettings()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val mutableSettings = MutableStateFlow(defaults)
@@ -59,6 +60,7 @@ object DataStoreManager : SettingsStore {
             )
             runBlocking(Dispatchers.IO) {
                 normalizeLegacySlideSensitivity()
+                applyNetworkConnectivityFix()
                 val initial = dataStore.data.first().toAppSettings()
                 dataStore.edit { it.write(initial) }
                 mutableSettings.value = initial
@@ -93,6 +95,62 @@ object DataStoreManager : SettingsStore {
     }
 
     fun exportBackup(): Map<String, Any> = current.toMap().filterKeys { it !in AUTH_KEYS }
+
+    /**
+     * 一次性把老用户从「默认打不开」的配置里挪出来。
+     *
+     * 背景：`use_doh` / `doh_preset` / `domain_name` 都是**持久化**的，改 [AppSettings]
+     * 的默认值**只对新装生效**。老用户（含 mod 7.5 及更早）盘里躺着的是
+     * `use_doh=false` + `doh_preset=alidns` + `domain_name=https://hanime1.me/`，
+     * 也就是「系统 DNS 被投毒 + 阿里 DoH 也返回投毒 IP + 域名本身被 SNI 阻断」，
+     * 三样占全，装上新版依然打不开。所以必须显式迁移一次。
+     *
+     * 迁移规则（**只动「还是出厂值」的项，绝不覆盖用户刻意改过的设置**）：
+     *
+     * 1. 域名仍是老的出厂值 `hanime1.me` → 换成唯一可直连的 `hanime1.com`。
+     *    用 `use_custom_mirror_site` / `site_source` 兜住：自定义镜像与 nJAV 数据源都不碰。
+     * 2. 没开「内置域名」时才开 DoH。开了内置域名的用户是**故意**选的另一条路
+     *    （两者在设置页互斥，自动打开 DoH 会把他的选择关掉），所以直接跳过。
+     * 3. `doh_preset` 还是老的出厂值 `alidns` → 换成 `dnspod`。`custom` / `cloudflare`
+     *    等值一律不动（那是用户自己选的）。
+     *
+     * 用 [NETWORK_FIX_MIGRATED] 打标，只跑一次：否则用户之后手动关掉 DoH
+     * 或切回 `hanime1.me`，下次启动又会被强行改回去。
+     */
+    private suspend fun applyNetworkConnectivityFix() {
+        dataStore.edit { preferences ->
+            if (preferences.bool(NETWORK_FIX_MIGRATED, false)) return@edit
+
+            val usingCustomMirror = preferences.bool("use_custom_mirror_site", false)
+            val onNjav = preferences.string("site_source", "hanime1") == "njav"
+            val useBuiltInHosts = preferences.bool("use_built_in_hosts", false)
+
+            // 1) 域名：仅在「仍是老出厂值」且没走自定义镜像 / nJAV 时改。
+            if (!usingCustomMirror && !onNjav) {
+                val legacy = "https://hanime1.me/"
+                if (preferences.string("domain_name", legacy).trimEnd('/') == legacy.trimEnd('/')) {
+                    preferences[stringPreferencesKey("domain_name")] = "https://hanime1.com/"
+                }
+                // selectedBaseUrl 是「切回 hanime 时用哪个镜像」，同样是老值时一并校准，
+                // 否则用户进了 nJAV 再切回来，会切回那个被 SNI 阻断的 hanime1.me。
+                if (preferences.string("selectedBaseUrl", legacy).trimEnd('/') == legacy.trimEnd('/')) {
+                    preferences[stringPreferencesKey("selectedBaseUrl")] = "https://hanime1.com/"
+                }
+            }
+
+            // 2) 只在用户没有主动选「内置域名」时打开 DoH（两者互斥，理由见 KDoc）。
+            if (!useBuiltInHosts) {
+                preferences[booleanPreferencesKey("use_doh")] = true
+            }
+
+            // 3) 预设：老的出厂值 alidns（实测返回投毒 IP）→ dnspod。用户自选的其它值不动。
+            if (preferences.string("doh_preset", "alidns") == "alidns") {
+                preferences[stringPreferencesKey("doh_preset")] = "dnspod"
+            }
+
+            preferences[booleanPreferencesKey(NETWORK_FIX_MIGRATED)] = true
+        }
+    }
 
     private suspend fun normalizeLegacySlideSensitivity() {
         dataStore.edit { preferences ->
@@ -143,6 +201,7 @@ object DataStoreManager : SettingsStore {
         appendCustomMirrorPath = bool("append_custom_mirror_path", defaults.appendCustomMirrorPath), useBuiltInHosts = bool("use_built_in_hosts", defaults.useBuiltInHosts),
         customHostsData = string("custom_hosts_data", defaults.customHostsData), useDoH = bool("use_doh", defaults.useDoH), dohPreset = string("doh_preset", defaults.dohPreset),
         dohCustomUrl = string("doh_custom_url", defaults.dohCustomUrl), dohBootstrapIps = string("doh_bootstrap_ips", defaults.dohBootstrapIps), dohTimeoutSeconds = int("doh_timeout_seconds", defaults.dohTimeoutSeconds),
+        allowImageRelay = bool("allow_image_relay", defaults.allowImageRelay),
         proxyType = ProxyType.fromId(int("proxy_type", defaults.proxyType.id)), proxyIp = string("proxy_ip", defaults.proxyIp), proxyPort = int("proxy_port", defaults.proxyPort),
         cachedUpdateJson = nullableString("app_update_cached_json"), ignoredVersionCode = int("app_update_ignored_version_code", defaults.ignoredVersionCode),
         downloadCountLimit = int("download_count_limit", defaults.downloadCountLimit), downloadSpeedLimitIndex = intInRange("download_speed_limit", defaults.downloadSpeedLimitIndex, DOWNLOAD_SPEED_BYTES.indices),
@@ -180,7 +239,7 @@ object DataStoreManager : SettingsStore {
         put("app_language", appLanguage.preferenceValue); put("use_dark_mode", themeMode.value); put("use_dynamic_color", useDynamicColor); put("theme_accent_color", themeAccent.id); put("app_palette_style", paletteStyle.id)
         put("pref_fake_launcher_icon", fakeLauncherIcon); put("allow_pip_mode", allowPipMode); put("use_lock_screen", useLockScreen); put("secure_mode", secureMode); put("disable_comments", disableComments); put("haptic_feedback_enabled", hapticFeedbackEnabled); put("disable_predictive_back", disablePredictiveBack); put("tablet_mode", tabletMode); put("large_screen_tablet_mode_hint_shown", largeScreenTabletModeHintShown); put("video_landscape_layout_style", videoLandscapeLayoutStyle.value)
         put("usage_notice_accepted_v2", usageNoticeAccepted); put("usage_source_verified", usageSourceVerified); put("usage_source_pending", usageSourcePending); put("already_login", isAlreadyLogin); put("local_list_notice_dismissed", localListNoticeDismissed); put("saved_user_id", savedUserId); put("cookie", loginCookie); put("cf_cookie", cloudFlareCookie); put("cf_cookie_host", cloudFlareCookieHost)
-        put("domain_name", domainName); put("site_source", siteSource.value); put("selectedBaseUrl", selectedBaseUrl); put("use_custom_mirror_site", useCustomMirrorSite); put("custom_mirror_site", customMirrorSite); put("append_custom_mirror_path", appendCustomMirrorPath); put("use_built_in_hosts", useBuiltInHosts); put("custom_hosts_data", customHostsData); put("use_doh", useDoH); put("doh_preset", dohPreset); put("doh_custom_url", dohCustomUrl); put("doh_bootstrap_ips", dohBootstrapIps); put("doh_timeout_seconds", dohTimeoutSeconds); put("proxy_type", proxyType.id); put("proxy_ip", proxyIp); put("proxy_port", proxyPort)
+        put("domain_name", domainName); put("site_source", siteSource.value); put("selectedBaseUrl", selectedBaseUrl); put("use_custom_mirror_site", useCustomMirrorSite); put("custom_mirror_site", customMirrorSite); put("append_custom_mirror_path", appendCustomMirrorPath); put("use_built_in_hosts", useBuiltInHosts); put("custom_hosts_data", customHostsData); put("use_doh", useDoH); put("doh_preset", dohPreset); put("doh_custom_url", dohCustomUrl); put("doh_bootstrap_ips", dohBootstrapIps); put("doh_timeout_seconds", dohTimeoutSeconds); put("allow_image_relay", allowImageRelay); put("proxy_type", proxyType.id); put("proxy_ip", proxyIp); put("proxy_port", proxyPort)
         cachedUpdateJson?.let { put("app_update_cached_json", it) }; put("app_update_ignored_version_code", ignoredVersionCode); put("download_count_limit", downloadCountLimit); put("download_speed_limit", downloadSpeedLimitIndex); put("use_private_storage", usePrivateStorage); safDownloadPath?.let { put("saf_download_path", it) }; put("collapse_downloaded_group", collapseDownloadedGroup)
         put("switch_player_kernel", playerKernel.value); put("enable_google_cast", enableGoogleCast); put("show_bottom_progress", showBottomProgress); put("player_speed", playerSpeed.toString()); put("slide_sensitivity", slideSensitivity); put("long_press_speed_times", longPressSpeedTime.toString()); put("video_language", videoLanguage); put("default_video_quality", videoQuality); put("show_played_indicator", showPlayedIndicator); put("allow_resume_playback", allowResumePlayback)
         put("when_countdown_remind", whenCountdownRemindSeconds); put("show_comment_when_countdown", showCommentWhenCountdown); put("h_keyframes_enable", hKeyframesEnable); put("shared_h_keyframes_enable", sharedHKeyframesEnable); put("shared_h_keyframes_use_first", sharedHKeyframesUseFirst)

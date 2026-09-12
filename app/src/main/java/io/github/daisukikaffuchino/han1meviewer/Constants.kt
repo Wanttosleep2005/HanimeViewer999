@@ -68,9 +68,29 @@ object HanimeConstants {
      * - [HANIME_URL] 与 [ANIME_URL] 现在是同一份列表，`ANIME_URL` 只是语义别名
      *   （「里番站」），保留它是为了让调用点读起来仍然自解释。
      */
-    val HANIME_HOSTNAME = arrayOf("hanime1.me","hanime1.com","hanimeone.me")
-    val HANIME_URL = arrayOf("https://hanime1.me/","https://hanime1.com/","https://hanimeone.me/")
-    val ANIME_URL = arrayOf("https://hanime1.me/","https://hanime1.com/","https://hanimeone.me/")
+    /**
+     * ⚠️ **顺序即优先级，[0] 是默认镜像 —— 不要随手把它改回 `hanime1.me`。**
+     *
+     * 实测 2026-09-12（中国大陆线路）：这三个域名**共用 Cloudflare 的同一批边缘 IP**，
+     * 但阻断是**按 SNI 做的**，与 IP 无关：
+     *
+     * | 同一 IP `172.67.167.30`，只换 SNI | 结果 |
+     * |---|---|
+     * | `hanime1.com` | **200，正常返回页面** |
+     * | `hanime1.me` | **000，TLS 被 RST** |
+     * | `hanimeone.me` | **000，TLS 被 RST** |
+     *
+     * 也就是说：**`hanime1.me` / `hanimeone.me` 换任何 DNS、任何 IP 都救不回来**
+     * （SNI 明文写在 ClientHello 里，改 IP 不改变 SNI）。只有 `hanime1.com` 能直连，
+     * 实测首页 12/12 次 200、内容同源（标题同为 `Hanime1.me - H動漫/裏番/線上看`）。
+     *
+     * 所以把 `hanime1.com` 放在 [0]：默认域名、[sanitizeDomain] 的兜底值、
+     * 设置页里标「默认」的那一项，全都跟着指向它。另两个仍保留为可选项，
+     * 供境外或无阻断线路的用户使用。
+     */
+    val HANIME_HOSTNAME = arrayOf("hanime1.com","hanime1.me","hanimeone.me")
+    val HANIME_URL = arrayOf("https://hanime1.com/","https://hanime1.me/","https://hanimeone.me/")
+    val ANIME_URL = arrayOf("https://hanime1.com/","https://hanime1.me/","https://hanimeone.me/")
 
     /**
      * nJAV（njavtv.com）—— 独立数据源，只有这一个域名。

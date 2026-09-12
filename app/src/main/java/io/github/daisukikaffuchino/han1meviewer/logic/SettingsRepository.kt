@@ -129,6 +129,13 @@ object SettingsRepository : SettingsStore {
     val subscriptionArtistRows get() = current.subscriptionArtistRows
     val alwaysShowUpdateCard get() = current.alwaysShowUpdateCard
     val displayDensity get() = current.displayDensity
+    /**
+     * 是否允许封面图在直连失败时走第三方中转。
+     *
+     * 读取处是 [io.github.daisukikaffuchino.han1meviewer.logic.network.interceptor.ImageRelayInterceptor]，
+     * 它在每次图片请求时读取，所以**改设置立即生效，不用重启**。
+     */
+    val allowImageRelay get() = current.allowImageRelay
 
     suspend fun setLoginState(value: Boolean) = update { it.copy(isAlreadyLogin = value) }
     suspend fun dismissLocalListNotice() = update { it.copy(localListNoticeDismissed = true) }

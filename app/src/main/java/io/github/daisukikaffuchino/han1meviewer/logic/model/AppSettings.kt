@@ -136,20 +136,53 @@ data class AppSettings(
     val loginCookie: String = "",
     val cloudFlareCookie: String = "",
     val cloudFlareCookieHost: String = "",
-    val domainName: String = "https://hanime1.me/",
-    /** 当前数据源，默认仍走 hanime1.me。 */
+    /**
+     * 默认镜像 = `hanime1.com`。
+     *
+     * ⚠️ 不是 `hanime1.me`。实测（2026-09-12）国内线路对这三个镜像按 **SNI** 阻断：
+     * 同一个 Cloudflare IP 上，SNI 写 `hanime1.com` 返回 200，写 `hanime1.me` /
+     * `hanimeone.me` 直接 TLS RST。详见 [io.github.daisukikaffuchino.han1meviewer.HanimeConstants.HANIME_URL]。
+     */
+    val domainName: String = "https://hanime1.com/",
+    /** 当前数据源，默认仍走 hanime 里番。 */
     val siteSource: SiteSource = SiteSource.Hanime1,
-    val selectedBaseUrl: String = "https://hanime1.me/",
+    val selectedBaseUrl: String = "https://hanime1.com/",
     val useCustomMirrorSite: Boolean = false,
     val customMirrorSite: String = "",
     val appendCustomMirrorPath: Boolean = true,
     val useBuiltInHosts: Boolean = false,
     val customHostsData: String = "",
-    val useDoH: Boolean = false,
-    val dohPreset: String = "alidns",
+    /**
+     * ⚠️ 默认**开启** DoH。
+     *
+     * 国内系统 DNS 对本站系域名是**投毒**的（实测：`hanime1.me` → `103.246.246.144`
+     * TCP 拒绝；`hanime1.com` → `154.85.102.32` 超时），不开 DoH 就只能拿到假 IP。
+     * 配合 [dohPreset] 默认 `dnspod`（`doh.pub` 实测能返回真实 Cloudflare IP），
+     * 安装后即可直连，无需用户手动配置。
+     *
+     * 注意：它与 [useBuiltInHosts] 在设置页里**互斥**（开一个会自动关另一个），
+     * 这里默认走 DoH 这条更通用的路径，[useBuiltInHosts] 保持 false。
+     */
+    val useDoH: Boolean = true,
+    /** 默认 DNSPod（`doh.pub`）：实测能对 hanime / nJAV 返回真实 IP，见 [DohConfig.presets]。 */
+    val dohPreset: String = "dnspod",
     val dohCustomUrl: String = "",
     val dohBootstrapIps: String = "",
     val dohTimeoutSeconds: Int = 10,
+    /**
+     * 允许封面图在直连失败时借用第三方图片中转（默认开）。
+     *
+     * 本站两个站族的封面图都在**被封**的域名上（hanime 全部图片走 `vdownload.hembed.com`，
+     * nJAV 封面走 `fourhoi.com`），纯客户端改 DNS / 改 IP 都救不了，只能借一跳。
+     * 默认开启是为了「装完就能看到封面」；关掉后本站封面会显示为空（不影响别的图源）。
+     *
+     * 为什么仍要留这个开关：走中转意味着**每个封面图的完整 URL（含域名与视频编号）
+     * 都会经过第三方服务器**。这是实打实的隐私代价，用户有权拒绝，所以设置为可关。
+     *
+     * 影响范围仅限图片：[io.github.daisukikaffuchino.han1meviewer.logic.network.interceptor.ImageRelayInterceptor]
+     * **只对图片扩展名生效**，视频链路不会被送去第三方（中转服务本身也只处理图片）。
+     */
+    val allowImageRelay: Boolean = true,
     val proxyType: ProxyType = ProxyType.System,
     val proxyIp: String = "",
     val proxyPort: Int = -1,

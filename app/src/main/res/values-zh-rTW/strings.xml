@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="home_page">首頁</string>
     <string name="latest_hanime">最新里番</string>
@@ -193,6 +193,8 @@
     <string name="custom_hosts_format">多個 IP 位址以逗號分隔，例如 1.2.3.4,5.6.7.8</string>
     <string name="custom_hosts_empty_summary">未設定（使用內建對應）</string>
     <string name="use_doh">使用 DoH</string>
+    <string name="allow_image_relay">封面圖第三方中轉</string>
+    <string name="allow_image_relay_summary">本站封面圖放在被封的網域上（vdownload.hembed.com、fourhoi.com），直連必然失敗。開啟後仍會先走直連，只有失敗時才借第三方圖片中轉取回封面。\n關閉後這些封面會顯示為空（不影響其他圖源）。</string>
     <string name="doh_settings">DoH 設定</string>
     <string name="doh_preset">DoH 預設</string>
     <string name="doh_custom_url">自訂 DoH URL</string>
@@ -444,6 +446,7 @@
     <string name="view_node_latency">查看節點延遲</string>
     <string name="node_latency_sum">啟用內建 Hosts 後可檢測延遲情況\n未啟用時為實際解析位址</string>
     <string name="builtin_dns">內建 DNS 對應</string>
+    <string name="image_relay_section">封面圖</string>
     <string name="test_doh">測試 DoH</string>
     <string name="test_doh_summary">檢查目前 DoH 設定是否可以解析網域</string>
     <string name="doh_test_result">DoH 測試結果</string>

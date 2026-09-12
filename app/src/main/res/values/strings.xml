@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="home_page">Home Page</string>
     <string name="latest_hanime">Latest H Anime</string>
@@ -195,6 +195,8 @@ Some mirrors may not support login, may not share cookies, may fail verification
     <string name="custom_hosts_format">Multiple IPs separated by commas, e.g. 1.2.3.4,5.6.7.8</string>
     <string name="custom_hosts_empty_summary">Not set (using built-in mapping)</string>
     <string name="use_doh">Use DoH</string>
+    <string name="allow_image_relay">Relay blocked cover images</string>
+    <string name="allow_image_relay_summary">Covers are hosted on blocked domains (vdownload.hembed.com, fourhoi.com), so a direct request fails. Direct connection is always tried first; only on failure is the image fetched through a third-party image proxy.\nTurning this off leaves those covers blank.</string>
     <string name="doh_settings">DoH Settings</string>
     <string name="doh_preset">DoH Preset</string>
     <string name="doh_custom_url">Custom DoH URL</string>
@@ -452,6 +454,7 @@ Recommendations are as follows:\n
     <string name="view_node_latency">View node latency</string>
     <string name="node_latency_sum">Enable built-in Hosts to detect latency\nDo not enable actual address resolution</string>
     <string name="builtin_dns">Built-in DNS mapping</string>
+    <string name="image_relay_section">Cover images</string>
     <string name="test_doh">Test DoH</string>
     <string name="test_doh_summary">Check whether current DoH settings can resolve the domain</string>
     <string name="doh_test_result">DoH Test Result</string>

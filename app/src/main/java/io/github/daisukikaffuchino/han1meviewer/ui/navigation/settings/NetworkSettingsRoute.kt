@@ -285,6 +285,11 @@ fun NetworkSettingsRouteScreen(embedded: Boolean = false) {
                 showHostsRestartConfirm = true
             }
         },
+        onAllowImageRelayChange = { value ->
+            coroutineScope.launch {
+                SettingsRepository.update { it.copy(allowImageRelay = value) }
+            }
+        },
         onSaveCustomHosts = { data ->
             val errors = HDns.validateCustomHosts(data)
             if (errors.isNotEmpty()) {
@@ -533,6 +538,7 @@ private fun buildNetworkSettingsUiState(context: Context): NetworkSettingsUiStat
         useDoH = SettingsRepository.useDoH,
         dohSummary = buildDohSummary(context),
         delaySummary = context.getString(R.string.node_latency_sum),
+        allowImageRelay = SettingsRepository.allowImageRelay,
     )
 }
 

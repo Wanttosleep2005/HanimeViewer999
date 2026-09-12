@@ -1,8 +1,8 @@
 {
-  "versionName": "26.3.2-mod.7.5",
-  "versionCode": 260930,
-  "downloadUrl": "https://github.com/ddsmie4t2g/HanimeViewer/releases/download/v26.3.2-mod.7.5/Han1meViewer-v26.3.2-mod.7.5.apk",
-  "updateDescription": "修好了「检测到新版本，点『立即更新』没反应」。\n\n这个 bug 的真凶是一个谁也看不出来的名字对不上：\n\n1. 入队下载用的是「唯一任务名」（enqueueUniqueWork 的那个 TAG），它被写进 WorkManager 的 workname 表；\n2. 而界面订阅进度用的是「按标签查」（getWorkInfosByTagFlow），查的是 worktag 表 —— 这两张表根本不是一回事。\n\nWorkManager 造请求时只会自动塞一个标签：worker 类的全限定名。所以按「AppUpdateWorker」这个短名去查，结果永远是空列表，界面读到的状态永远是「没有任务」。\n\n后果就是：包其实在后台老老实实下着，通知栏也有进度，但应用内的按钮不动、进度条不涨，看起来就是「点了没反应」。而且每点一次都会 REPLACE 掉上一次的任务，从零重新开始下载，所以点多少遍都没用 —— 这正是你遇到的现象。\n\n修法是入队时显式 addTag(TAG)，让「订阅」和「入队」真正对上；顺带把状态挑选改成按优先级（进行中 > 待下载 > 已完成 > 失败），避免同标签下残留的历史记录让界面跳来跳去。\n\n这个坑之所以一直没被发现，是因为它完全不报错：没有异常、没有日志、也没有失败提示，只是静静地什么都不发生。",
+  "versionName": "26.3.2-mod.7.6",
+  "versionCode": 260931,
+  "downloadUrl": "https://github.com/ddsmie4t2g/HanimeViewer/releases/download/v26.3.2-mod.7.6/Han1meViewer-v26.3.2-mod.7.6.apk",
+  "updateDescription": "不用梯子也能用了：默认镜像换成 hanime1.com、DoH 换成 doh.pub，封面图接上兜底中转。\n\n以前「必须挂代理才能用」不是一个 bug，而是三件事叠在一起，而且它们的封法各不相同：\n\n1. 系统 DNS 被投毒：hanime1.com 被解析到 31.13.70.33、njavtv.com 被解析到 199.96.63.53，全是连不上的假 IP。所以默认打开 DoH。\n2. 默认的那个 DoH 预设（alidns）本身也被投毒：hanime1.me → 199.59.148.106、hanime1.com → 31.13.70.33。换成 doh.pub（DNSPod），实测能返回真实 Cloudflare IP。\n3. 默认镜像是 hanime1.me，而它被按 SNI 封了：同一个 IP 上，SNI 写 hanime1.com 返回 200，写 hanime1.me 直接 TLS RST。所以换 IP、换 DNS 都没用，只能换镜像 —— 现在默认 hanime1.com。\n\n另外补上了封面图：本站的图全放在被封的域名上（hanime 是 vdownload.hembed.com，nJAV 是 fourhoi.com），直连必然失败，以前会得到一屏空白占位图。现在改成「先直连，只有失败才借第三方图片中转」，实测能正常取回封面。不想让封面 URL 经过第三方的，可以在「网络设置 → 封面图」里关掉这个开关（关掉后这些封面会显示为空）。\n\n注意：视频本身仍然需要代理。视频域名 vdownload.hembed.com 是 IP 级封锁 —— TCP 能连上，但换任何 SNI（包括 example.com）都 TLS 失败，所以既不是 DNS 问题也不是 SNI 问题，客户端无解。本次修好的是「能打开、能浏览、能看到封面」，不含「能播放」。\n\n已有安装无需手动改设置：升级后会自动做一次性迁移，只把仍是旧出厂值的项改成新默认值；你自己改过的自定义镜像 / 自定义 DoH 不会被覆盖。",
   "forceUpdate": false,
   "isShowAnnouncement": false,
   "announcement": ""

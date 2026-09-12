@@ -54,6 +54,8 @@ data class NetworkSettingsUiState(
     val useDoH: Boolean,
     val dohSummary: String,
     val delaySummary: String,
+    /** 是否允许封面图走第三方中转（直连失败时兜底）。 */
+    val allowImageRelay: Boolean,
 )
 
 data class DelayResultUi(
@@ -123,6 +125,7 @@ fun NetworkSettingsScreen(
     onSaveCustomMirrorSite: (Boolean, String, Boolean) -> Unit,
     onTestCustomMirrorSite: (String, Boolean) -> Unit,
     onUseBuiltInHostsChange: (Boolean) -> Unit,
+    onAllowImageRelayChange: (Boolean) -> Unit,
     onSaveCustomHosts: (String) -> Unit,
     onSaveDohSettings: (Boolean, String, String, String, Int) -> Unit,
     onOpenDelayTest: () -> Unit,
@@ -297,6 +300,17 @@ fun NetworkSettingsScreen(
                     summary = state.dohSummary,
                     iconRes = R.drawable.ic_dns,
                     onClick = { showDohDialog = true },
+                )
+            }
+
+            SettingsSectionTitle(titleRes = R.string.image_relay_section)
+            SettingsSegmentedGroup {
+                SettingSwitchItem(
+                    title = stringResource(R.string.allow_image_relay),
+                    summary = stringResource(R.string.allow_image_relay_summary),
+                    checked = state.allowImageRelay,
+                    iconRes = R.drawable.ic_share,
+                    onCheckedChange = onAllowImageRelayChange,
                 )
             }
 
@@ -855,6 +869,7 @@ private fun NetworkSettingsScreenPreview() {
                 useDoH = false,
                 dohSummary = "关闭",
                 delaySummary = "启用内建Hosts后可侦测延迟状况\n不启用为实际解析位址",
+                allowImageRelay = true,
             ),
             domainOptions = listOf(
                 "hanime1.me (默认)" to "https://hanime1.me/",
@@ -892,6 +907,7 @@ private fun NetworkSettingsScreenPreview() {
             onSaveCustomMirrorSite = { _, _, _ -> },
             onTestCustomMirrorSite = { _, _ -> },
             onUseBuiltInHostsChange = {},
+            onAllowImageRelayChange = {},
             onSaveCustomHosts = {},
             customHostsData = "",
             onSaveDohSettings = { _, _, _, _, _ -> },
