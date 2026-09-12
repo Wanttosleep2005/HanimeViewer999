@@ -26,10 +26,12 @@ import io.github.daisukikaffuchino.han1meviewer.logic.SettingsRepository
 import io.github.daisukikaffuchino.han1meviewer.logic.model.SiteSource
 import io.github.daisukikaffuchino.han1meviewer.R
 import io.github.daisukikaffuchino.han1meviewer.logic.Parser
+import io.github.daisukikaffuchino.han1meviewer.logic.network.DiagReport
 import io.github.daisukikaffuchino.han1meviewer.logic.network.DohConfig
 import io.github.daisukikaffuchino.han1meviewer.logic.network.HDns
 import io.github.daisukikaffuchino.han1meviewer.logic.network.HProxySelector
 import io.github.daisukikaffuchino.han1meviewer.logic.network.HanimeNetwork
+import io.github.daisukikaffuchino.han1meviewer.logic.network.NetworkDiagnostics
 import io.github.daisukikaffuchino.han1meviewer.logic.network.ServiceCreator
 import io.github.daisukikaffuchino.han1meviewer.logic.state.WebsiteState
 import io.github.daisukikaffuchino.han1meviewer.logout
@@ -44,6 +46,7 @@ import io.github.daisukikaffuchino.utils.SonnerToast
 import okhttp3.Request
 import java.net.InetAddress
 import java.util.concurrent.Executors
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
 private enum class DohConflictTarget {
@@ -61,6 +64,9 @@ fun NetworkSettingsRouteScreen(embedded: Boolean = false) {
     var isDohTesting by remember { mutableStateOf(false) }
     var isCustomMirrorTesting by remember { mutableStateOf(false) }
     var customMirrorTestResult by remember { mutableStateOf<String?>(null) }
+    var isDiagnosing by remember { mutableStateOf(false) }
+    var diagReport by remember { mutableStateOf<DiagReport?>(null) }
+    var diagJob by remember { mutableStateOf<Job?>(null) }
     var showDomainRestartConfirm by remember { mutableStateOf(false) }
     var showHostsRestartConfirm by remember { mutableStateOf(false) }
     var showCustomHostsValidationError by remember { mutableStateOf<List<String>?>(null) }
@@ -130,6 +136,24 @@ fun NetworkSettingsRouteScreen(embedded: Boolean = false) {
         delayHandler.postDelayed({ scheduleNextTest(ipList) }, 2000)
     }
 
+    /**
+     * 一键网络诊断。
+     *
+     * 逐项收集结果，所以用户能看着结论一条条冒出来；关掉弹窗要**取消**协程，
+     * 否则跑完时又会把已关闭的弹窗顶回来。
+     */
+    fun runDiagnostics() {
+        diagJob?.cancel()
+        diagReport = null
+        isDiagnosing = true
+        diagJob = coroutineScope.launch {
+            runCatching {
+                NetworkDiagnostics.run().collect { diagReport = it }
+            }.onFailure { LogUtil.w("NET_DIAG", "diagnose failed: ${it.message}") }
+            isDiagnosing = false
+        }
+    }
+
     fun runDohTest() {
         if (isDohTesting) return
         val host = SettingsRepository.baseUrl.toUri().host ?: applicationContext.getString(R.string.unknow)
@@ -171,6 +195,7 @@ fun NetworkSettingsRouteScreen(embedded: Boolean = false) {
         onDispose {
             stopDelayTest()
             stopDohTest()
+            diagJob?.cancel()
             executor.shutdownNow()
         }
     }
@@ -323,6 +348,21 @@ fun NetworkSettingsRouteScreen(embedded: Boolean = false) {
                 currentHost = SettingsRepository.baseUrl
                 HanimeNetwork.rebuildNetwork()
             }
+        },
+        diagReport = diagReport,
+        isDiagnosing = isDiagnosing,
+        onOpenDiagnostics = { runDiagnostics() },
+        onDismissDiagnostics = {
+            diagJob?.cancel()
+            diagJob = null
+            isDiagnosing = false
+            diagReport = null
+        },
+        onCopyDiagReport = { report ->
+            val text = report.toPlainText()
+            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+            clipboard.setPrimaryClip(android.content.ClipData.newPlainText("network-diag", text))
+            SonnerToast.success(R.string.diag_copied)
         },
         onOpenDelayTest = {
             val host =
