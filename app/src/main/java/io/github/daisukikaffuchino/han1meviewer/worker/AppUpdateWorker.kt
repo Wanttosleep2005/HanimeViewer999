@@ -62,6 +62,16 @@ class AppUpdateWorker(
         /** 入队一次下载。重复点击用 REPLACE 覆盖，不会并排跑两个。 */
         fun enqueue(context: Context, url: String, targetVersionCode: Int) {
             val request = OneTimeWorkRequestBuilder<AppUpdateWorker>()
+                // ⚠️ 这行**不能删**，否则「点立即更新毫无反应」会立刻复发。
+                //
+                // `WorkRequest.Builder` 造出来的 request 只带一个标签：worker 类的全限定名
+                // （`io.github.daisukikaffuchino.han1meviewer.worker.AppUpdateWorker`）。
+                // 它**不会**把构造时传进来的那个唯一任务名 `TAG` 当成标签写进 `worktag` 表。
+                // 于是 [observe] 里按 `getWorkInfosByTagFlow(TAG)` 查，查询结果永远是空列表，
+                // 状态永远停在 Idle —— 下载其实在跑，但界面上看不出来：按钮不变、进度不涨，
+                // 用户点多少遍都像「没反应」（每次点击还会 REPLACE 掉上一个任务，重新开始）。
+                // 见 [observe] 的说明。
+                .addTag(TAG)
                 .setConstraints(
                     Constraints.Builder()
                         .setRequiredNetworkType(NetworkType.CONNECTED)
@@ -86,11 +96,26 @@ class AppUpdateWorker(
          *
          * 这里只做「WorkManager 状态 → 业务状态」的映射；**不**在这里决定要不要装，
          * 「已经装过就别再弹安装器」的判断放在 ViewModel（见 `HomePageViewModel`）。
+         *
+         * ⚠️ 这里必须按 [TAG] 查，而 [enqueue] 里必须**显式 `addTag(TAG)`**。
+         * 曾经的写法是 `enqueueUniqueWork(TAG, ...)` + `getWorkInfosByTagFlow(TAG)`，
+         * 看着对称，其实两者查的根本不是一回事：唯一任务名进的是 `workname` 表，
+         * 而按标签查走的是 `worktag` 表，`WorkRequest.Builder` 只往里放了 worker 类名。
+         * 结果查询恒为空 → 状态恒为 [AppUpdateWorkState.Idle] → 下载在后台跑着，
+         * 界面上却一片死寂（按钮不变、无进度），用户看到的就是「点立即更新没反应」。
+         *
+         * 另外这里按优先级挑记录，而不是无脑 `firstOrNull()`：同一个 tag 下可能同时留着
+         * 几条历史记录（例如上次失败的、被 REPLACE 掉的），随便挑一条会让界面跳来跳去。
+         * 进行中的永远最优先，其次是「已下载好可以装」，最后才是失败/取消。
          */
         fun observe(context: Context): Flow<AppUpdateWorkState> =
             workManager(context).getWorkInfosByTagFlow(TAG).map { infos ->
-                // 唯一任务，只会有 0 或 1 个
-                val info = infos.firstOrNull()
+                val info = infos.firstOrNull { it.state == WorkInfo.State.RUNNING }
+                    ?: infos.firstOrNull {
+                        it.state == WorkInfo.State.ENQUEUED || it.state == WorkInfo.State.BLOCKED
+                    }
+                    ?: infos.firstOrNull { it.state == WorkInfo.State.SUCCEEDED }
+                    ?: infos.firstOrNull { it.state == WorkInfo.State.FAILED }
                     ?: return@map AppUpdateWorkState.Idle
 
                 when (info.state) {
