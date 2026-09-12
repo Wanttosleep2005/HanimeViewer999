@@ -1,8 +1,8 @@
 {
-  "versionName": "26.3.2-mod.6.7",
-  "versionCode": 260921,
-  "downloadUrl": "https://github.com/ddsmie4t2g/HanimeViewer/releases/download/v26.3.2-mod.6.7/Han1meViewer-v26.3.2-mod.6.7.apk",
-  "updateDescription": "1. 修好「详情页能打开、但视频 0:00 / 0 播不了」：ExoPlayer 内核原先走的是系统自带网络，等于绕开了应用里的域名兜底、代理设置，也用了过短的 8 秒超时。现已改为走和应用同一套网络栈 —— 域名解析有兜底、用户配的代理生效、超时放宽到 20/30 秒，HLS 的分片请求也能复用连接。\n2. 播放链路再加一道保险：只要请求打到视频 CDN，就自动补上防盗链所需的 Referer，不再依赖播放器组件是否正确透传请求头。\n3. 播放失败时不再「静默卡住」：以前错误信息在传递过程中被周期刷新冲掉了，界面既不提示也不给重试按钮，看起来就是「点播放没反应」。现在会弹出具体错误（含底层原因，如 403 / 域名解析失败 / 证书问题），并正常显示重试按钮。",
+  "versionName": "26.3.2-mod.6.8",
+  "versionCode": 260922,
+  "downloadUrl": "https://github.com/ddsmie4t2g/HanimeViewer/releases/download/v26.3.2-mod.6.8/Han1meViewer-v26.3.2-mod.6.8.apk",
+  "updateDescription": "1. 修好 nJAV 下载：以前点下载会报「无法获取文件大小或下载信息」。原因是 nJAV 给的是 HLS 清单（.m3u8），直接按普通文件下载只会得到一个几 KB 的文本。现在会解析清单、按分片下载并拼接成一个可直接播放的 .ts 文件，支持断点续传与单片重试。\n2. 修好中文字幕 / 无码分类页里「时长显示成中文字幕」：卡片上其实有两个角标，解析时取错了那个。现在按时长格式识别，不再认错。\n3. 修好详情页「播放量显示 null」：没有播放量数据时改为不显示，而不是印出 null。",
   "forceUpdate": false,
   "isShowAnnouncement": false,
   "announcement": ""

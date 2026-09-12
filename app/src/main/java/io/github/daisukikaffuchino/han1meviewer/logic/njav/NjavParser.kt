@@ -144,7 +144,7 @@ object NjavParser {
             ?.takeIf { it.isNotBlank() }
             ?: "https://fourhoi.com/$slug/cover-t.jpg"
 
-        val duration = card.selectFirst("span.absolute")?.text()?.trim()?.takeIf { it.isNotBlank() }
+        val duration = parseDuration(card)
 
         return HanimeInfo(
             title = title,
@@ -154,6 +154,30 @@ object NjavParser {
             itemType = HanimeInfo.NORMAL,
         )
     }
+
+    /**
+     * 卡片右下角的时长。
+     *
+     * ⚠️ **不能**直接 `selectFirst("span.absolute")`。卡片里有两个 `span.absolute`：
+     *
+     * ```html
+     * <span class="absolute bottom-1 left-1 …bg-red-800…">中文字幕</span>   ← 角标，DOM 里在前
+     * <span class="absolute bottom-1 right-1 …bg-gray-800…">2:45:03</span>  ← 真正的时长
+     * ```
+     *
+     * 中文字幕 / 无码 分类页的卡片都带左侧角标，于是「取第一个」拿到的就是角标，
+     * 表现为**右下角时长显示成「中文字幕」**（用户 2026-09-12 报的那个 bug）。
+     *
+     * 修法：不按位置猜，按**内容**挑 —— 只认长得像时长的那个（`1:58:48` / `12:34`）。
+     * 顺带也把左侧角标的文案丢掉了，反正 [HanimeInfo] 没有装它的字段。
+     */
+    private fun parseDuration(card: Element): String? = card.select("span.absolute")
+        .asSequence()
+        .map { it.text().trim() }
+        .firstOrNull { DURATION_TEXT.matches(it) }
+
+    /** `1:58:48` / `12:34`；见 [parseDuration]。 */
+    private val DURATION_TEXT = Regex("""^\d{1,3}:\d{2}(?::\d{2})?$""")
 
     /** 把若干栏目拼成首页模型；空栏目会被 [io.github.daisukikaffuchino.han1meviewer.ui.screen.home.homepage.buildCategoryList] 自动过滤掉。 */
     fun homePage(sections: Map<String, List<HanimeInfo>>): WebsiteState<HomePage> {
@@ -232,11 +256,20 @@ object NjavParser {
             .distinct()
             .forEach { url ->
                 val label = qualityLabel(url)
-                if (label !in map) map[label] = HanimeLink(url, null)
+                if (label !in map) map[label] = HanimeLink(url, HLS_SUBTYPE)
             }
-        master?.let { map["自动"] = HanimeLink(it, null) }
+        master?.let { map["自动"] = HanimeLink(it, HLS_SUBTYPE) }
         return map
     }
+
+    /**
+     * nJAV 给的全是 HLS 清单，下载后拼出来的是 MPEG-TS。
+     *
+     * [HanimeLink.subtype] = `mp2t` 会让 [HanimeLink.suffix] 返回 `ts`，
+     * 于是下载文件叫 `…_1080P.ts`。**这不是可有可无的**：真实字节是 TS，
+     * 挂个 `.mp4` 后缀会让部分播放器按容器名去解析而失败。
+     */
+    private const val HLS_SUBTYPE = "mp2t"
 
     /**
      * 从播放地址里抽清晰度标签。

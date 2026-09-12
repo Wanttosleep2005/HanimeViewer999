@@ -1001,10 +1001,15 @@ private fun MetaSection(
     fromDownload: Boolean,
     onRateVideo: (Boolean) -> Unit,
 ) {
+    // `video.views` 是可空的，而且 nJAV 的详情页**根本没有播放量字段**（已实测：
+    // og: 系列 meta 里只有 title/description/image/duration/actor/release_date）。
+    // 原实现直接 `video.views.toString()`，null 会被打印成字面量 "null" 显示在界面上。
+    // 这里改成「没有就整块不显示」，比硬塞一个 0 更诚实。
     val viewsText = if (fromDownload) {
         stringResource(R.string.s_view_times, "0721")
     } else {
-        DisplayTextLocalizer.localizeViews(video.views.toString())
+        video.views?.trim()?.takeIf { it.isNotEmpty() }
+            ?.let(DisplayTextLocalizer::localizeViews)
     }
     val uploadTime = video.uploadTime?.format(previewSafeDateFormat).orEmpty()
 
@@ -1021,17 +1026,19 @@ private fun MetaSection(
                 onRateVideo = onRateVideo,
             )
         }
-        MetaInfoItem(
-            icon = {
-                Icon(
-                    painter = painterResource(R.drawable.ic_play_arrow),
-                    contentDescription = null,
-                    modifier = Modifier.size(16.dp),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
-                )
-            },
-            text = viewsText,
-        )
+        viewsText?.let { text ->
+            MetaInfoItem(
+                icon = {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_play_arrow),
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
+                    )
+                },
+                text = text,
+            )
+        }
 
         MetaInfoItem(
             icon = {
