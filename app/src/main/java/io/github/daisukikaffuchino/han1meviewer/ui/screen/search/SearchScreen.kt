@@ -185,6 +185,7 @@ fun SearchScreen(
                 viewModel.getSearchDate() != null ||
                 viewModel.tagMap.size() > 0 ||
                 viewModel.brandMap.size() > 0 ||
+                viewModel.actressPath != null ||
                 viewModel.broad
     }
 
@@ -196,6 +197,7 @@ fun SearchScreen(
         viewModel.duration,
         viewModel.getSearchDate(),
         viewModel.broad,
+        viewModel.actressPath,
         viewModel.tagMap.size(),
         viewModel.brandMap.size(),
     ) {
@@ -204,6 +206,7 @@ fun SearchScreen(
             sort = viewModel.sort,
             duration = viewModel.duration,
             releaseDate = viewModel.getSearchDate(),
+            actress = viewModel.actressName ?: viewModel.actressPath,
             tagCount = tagFlatten(viewModel.tagMap).size,
             brandCount = brandFlatten(viewModel.brandMap).size,
             broad = viewModel.broad,
@@ -299,6 +302,7 @@ fun SearchScreen(
         clearDuration: Boolean = false,
         clearTags: Boolean = false,
         clearBrands: Boolean = false,
+        clearActress: Boolean = false,
         clearBroad: Boolean = false,
     ) {
         if (clearGenre) viewModel.genre = null
@@ -311,6 +315,7 @@ fun SearchScreen(
         }
         if (clearTags) viewModel.tagMap.clear()
         if (clearBrands) viewModel.brandMap.clear()
+        if (clearActress) viewModel.clearActressFilter()
         if (clearBroad) viewModel.broad = false
         doSearch(resetScroll = true)
     }
@@ -358,6 +363,7 @@ fun SearchScreen(
                             clearDuration = true,
                             clearTags = true,
                             clearBrands = true,
+                            clearActress = true,
                             clearBroad = true,
                         )
                     },
@@ -366,6 +372,7 @@ fun SearchScreen(
                     onClearDuration = { clearSearchCriteria(clearDuration = true) },
                     onClearTagCount = { clearSearchCriteria(clearTags = true) },
                     onClearBrandCount = { clearSearchCriteria(clearBrands = true) },
+                    onClearActress = { clearSearchCriteria(clearActress = true) },
                     onClearBroad = { clearSearchCriteria(clearBroad = true) },
                     modifier = criteriaModifier,
                 )
@@ -729,6 +736,8 @@ data class SearchFilter(
     val sort: String? = null,
     val duration: String? = null,
     val releaseDate: String? = null,
+    /** nJAV 女优名（只用于显示，[SearchViewModel.actressPath] 才是真正的检索条件）。 */
+    val actress: String? = null,
     val tagCount: Int = 0,
     val brandCount: Int = 0,
     val broad: Boolean = false,
@@ -738,6 +747,7 @@ data class SearchFilter(
                 sort != null ||
                 duration != null ||
                 releaseDate != null ||
+                actress != null ||
                 tagCount > 0 ||
                 brandCount > 0 ||
                 broad
@@ -783,6 +793,7 @@ private fun ActiveSearchCriteria(
     onClearDuration: () -> Unit,
     onClearTagCount: () -> Unit,
     onClearBrandCount: () -> Unit,
+    onClearActress: () -> Unit,
     onClearBroad: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -828,6 +839,15 @@ private fun ActiveSearchCriteria(
             AssistChip(
                 onClick = onClearDuration,
                 label = { Text("${stringResource(R.string.release_date)}: $it") },
+                colors = AssistChipDefaults.assistChipColors(
+                    containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                ),
+            )
+        }
+        filter.actress?.let {
+            AssistChip(
+                onClick = onClearActress,
+                label = { Text("${stringResource(R.string.actress)}: $it") },
                 colors = AssistChipDefaults.assistChipColors(
                     containerColor = MaterialTheme.colorScheme.secondaryContainer,
                 ),

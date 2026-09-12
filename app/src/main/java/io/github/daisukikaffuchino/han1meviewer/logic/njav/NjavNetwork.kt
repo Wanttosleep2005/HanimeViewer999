@@ -55,6 +55,30 @@ object NjavNetwork {
     }
 
     /**
+     * 女优索引页 `/cn/actresses` 的第 n 页。
+     *
+     * ⚠️ 单数 `/cn/actress` 是 404，站点用的是复数。
+     * 站点**不支持按名字检索女优**（`?q=` / `?keyword=` / `?name=` 实测都被忽略，
+     * 只有 `?page` / `?sort` / `?height` / `?cup` / `?age` / `?debut` 生效），
+     * 所以名字过滤只能由 UI 在已加载的条目上做。
+     */
+    fun actressIndexUrl(page: Int): String = listUrl(ACTRESSES_SEGMENT, page)
+
+    /**
+     * 某位女优的影片列表页 `/cn/actresses/<编码后的名字>` 的第 n 页。
+     *
+     * 站点会把裸地址 301 到带随机数字前缀的 `/dm###/cn/actresses/…`——**那个前缀会变**
+     * （`/dm539/` 自己都能 301 到别处），所以这里只拼裸地址、让 OkHttp 跟跳转，
+     * 与 [detailUrl] 是同一套思路。实测裸地址与 `?page=N` 都能正常 200。
+     *
+     * @param path 形如 `actresses/%E6%B3%A2%E5%A4%9A%E9%87%8E%E7%B5%90%E8%A1%A3`，
+     *   由 [io.github.daisukikaffuchino.han1meviewer.logic.model.NjavActress.path] 提供。
+     */
+    fun actressUrl(path: String, page: Int): String = listUrl(path.trim('/'), page)
+
+    private const val ACTRESSES_SEGMENT = "actresses"
+
+    /**
      * 详情页地址：**裸 slug**，不带 `/cn/` 语言前缀。
      *
      * ⚠️ 2026-09 站点改版，旧的 `/cn/{slug}` 形式已经废了。请求它会吃到 301，

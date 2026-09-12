@@ -789,4 +789,15 @@
     <string name="download_error_forbidden">伺服器拒絕下載請求（HTTP %1$d），該位址可能有防盜鏈檢查，或需要登入狀態。</string>
     <string name="download_error_not_found">下載位址已失效（HTTP %1$d），請刪除該任務後重新取得位址。</string>
     <string name="download_error_http_status">下載請求被伺服器拒絕（HTTP %1$d）。</string>
+    <!-- nJAV 女優篩選（進階搜尋 chip + 選擇器） -->
+    <string name="actress">女優</string>
+    <string name="actress_search_hint">篩選女優</string>
+    <string name="actress_filter_local_hint">僅過濾已載入的女優，下滑可載入更多</string>
+    <string name="actress_loaded_count">已載入 %1$d 位</string>
+    <string name="actress_load_more">載入更多</string>
+    <string name="actress_empty">沒有找到女優</string>
+    <string name="actress_no_match">已載入的女優裡沒有符合項目，可點下方「載入更多」繼續找。</string>
+    <string name="actress_list_failed">女優列表載入失敗</string>
+    <string name="actress_video_count">%1$d 部影片</string>
+    <string name="actress_debut_year">%1$d 出道</string>
 </resources>

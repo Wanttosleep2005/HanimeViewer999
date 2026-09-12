@@ -85,6 +85,48 @@ class SearchViewModel(
     var tagMap = SparseArray<Set<SearchOption>>()
     var brandMap = SparseArray<Set<SearchOption>>()
 
+    /**
+     * nJAV 专属：当前选中的女优，存的是
+     * [io.github.daisukikaffuchino.han1meviewer.logic.model.NjavActress.path]
+     * （形如 `actresses/%E6%B3%A2%E5%A4%9A%E9%87%8E%E7%B5%90%E8%A1%A3`）。
+     * 非 nJAV 数据源下恒为 null。
+     */
+    var actressPath: String?
+        get() = state["actressPath"]
+        set(value) { state["actressPath"] = value }
+
+    /** nJAV 专属：选中女优的显示名，只用来画 chip 上的文案。 */
+    var actressName: String?
+        get() = state["actressName"]
+        set(value) { state["actressName"] = value }
+
+    /**
+     * 选中一位女优，并**把互相打架的其它条件一并清掉**。
+     *
+     * nJAV 的女优页（`/cn/actresses/<name>`）是一个独立的列表页，站方不接受
+     * 「女优 + 关键词 / 分类 / 标签」这种组合。与其在界面上留一堆点了不生效的 chip，
+     * 不如选中女优时清空它们 —— **界面显示什么，结果就是什么**。
+     */
+    fun applyActressFilter(path: String, name: String) {
+        query = null
+        genre = null
+        sort = null
+        year = null
+        month = null
+        approxTime = null
+        duration = null
+        broad = false
+        tagMap.clear()
+        brandMap.clear()
+        actressPath = path
+        actressName = name
+    }
+
+    fun clearActressFilter() {
+        actressPath = null
+        actressName = null
+    }
+
     val genres by unsafeLazy {
         loadAssetAs<List<SearchOption>>(
             if (SettingsRepository.isNjavSite) "search_options/genre_av.json"
@@ -136,6 +178,8 @@ class SearchViewModel(
         duration = null
         tagMap.clear()
         brandMap.clear()
+        actressPath = null
+        actressName = null
         recyclerViewState = null
         gridFirstVisibleItemIndex = 0
         gridFirstVisibleItemScrollOffset = 0
@@ -152,7 +196,8 @@ class SearchViewModel(
             NetworkRepo.getHanimeSearchResult(
                 page, query, genre,
                 sort, broad, date ,
-                duration, tags, brands
+                duration, tags, brands,
+                actressPath,
             ).collect { state ->
                 val prev = _searchStateFlow.getAndUpdate { state }
                 if (prev is PageLoadingState.Loading) _searchFlow.value = emptyList()

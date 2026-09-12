@@ -17,6 +17,7 @@ import io.github.daisukikaffuchino.han1meviewer.logic.model.HanimeVideo
 import io.github.daisukikaffuchino.han1meviewer.logic.model.HomePage
 import io.github.daisukikaffuchino.han1meviewer.logic.model.ModifiedPlaylistArgs
 import io.github.daisukikaffuchino.han1meviewer.logic.model.MyListType
+import io.github.daisukikaffuchino.han1meviewer.logic.model.NjavActress
 import io.github.daisukikaffuchino.han1meviewer.logic.model.OnlineWatchHistorySort
 import io.github.daisukikaffuchino.han1meviewer.logic.model.VideoCommentArgs
 import io.github.daisukikaffuchino.han1meviewer.logic.model.VideoComments
@@ -67,11 +68,12 @@ object NetworkRepo {
         page: Int, query: String?, genre: String?,
         sort: String?, broad: Boolean, date: String?,
         duration: String?, tags: Set<String>, brands: Set<String>,
+        actressPath: String? = null,
     ): Flow<PageLoadingState<MutableList<HanimeInfo>>> =
         if (SettingsRepository.isNjavSite) {
             njavListFlow(
                 page = page,
-                url = resolveNjavListUrl(page, query, genre, sort, tags),
+                url = resolveNjavListUrl(page, query, genre, sort, tags, actressPath),
             )
         } else {
             pageIOFlow(
@@ -657,9 +659,15 @@ object NetworkRepo {
     /**
      * 把 hanime 风格的检索条件翻译成 nJAV 的列表 URL。
      *
+     * - 选了女优 → 女优影片列表页 `/{locale}/actresses/{name}`
      * - 有关键词 → 搜索页 `/{locale}/search/{kw}`
      * - 否则按首页分类点击时带下来的「检索标记」（genre / tags / sort）映射到对应分类页
      * - 都没有 → 兜底到「最新」
+     *
+     * ⚠️ **女优优先级最高**：站点的女优页是一个独立的列表页，关键词 / 分类 / 标签
+     * 都拼不进去。所以选中女优时 UI 会把其它条件一并清掉（见
+     * [io.github.daisukikaffuchino.han1meviewer.ui.viewmodel.SearchViewModel.applyActressFilter]），
+     * 这里的顺序只是兜底，避免出现「点进去却是别的结果」。
      */
     private fun resolveNjavListUrl(
         page: Int,
@@ -667,7 +675,11 @@ object NetworkRepo {
         genre: String?,
         sort: String?,
         tags: Set<String>,
+        actressPath: String? = null,
     ): String {
+        actressPath?.takeIf { it.isNotBlank() }
+            ?.let { return NjavNetwork.actressUrl(it, page) }
+
         val keyword = query?.trim().orEmpty()
         if (keyword.isNotEmpty()) return NjavNetwork.searchUrl(keyword, page)
 
@@ -676,6 +688,34 @@ object NetworkRepo {
 
         return NjavNetwork.listUrl(path ?: "new", page)
     }
+
+    /**
+     * nJAV 女优索引（`/cn/actresses`）的第 [page] 页。
+     *
+     * 站点**不支持在索引页按名字检索**（`?q=` / `?keyword=` / `?name=` 实测都被忽略），
+     * 所以这里只负责「按页拉取」，名字过滤交给
+     * [io.github.daisukikaffuchino.han1meviewer.ui.screen.search.NjavActressPickerDialog]
+     * 在已加载的条目上做。索引默认按作品数从多到少排，**叫得出名字的女优都在前几页**，
+     * 所以「先加载几页 + 本地过滤」实际够用。
+     */
+    fun getNjavActressIndex(page: Int): Flow<PageLoadingState<MutableList<NjavActress>>> = flow {
+        val url = NjavNetwork.actressIndexUrl(page)
+        val response = NjavNetwork.service.get(url)
+        if (!response.isSuccessful) {
+            throw ParseException("nJAV: HTTP ${response.code()} - $url")
+        }
+        val body = response.body()?.string().orEmpty()
+        val list = NjavParser.actressList(body)
+        emit(
+            if (list.isEmpty() && !NjavParser.hasNextPage(body)) {
+                PageLoadingState.NoMoreData
+            } else {
+                PageLoadingState.Success(list)
+            }
+        )
+    }.catch { e ->
+        emit(PageLoadingState.Error(handleNjavException(e)))
+    }.flowOn(Dispatchers.IO)
 
     //</editor-fold>
 

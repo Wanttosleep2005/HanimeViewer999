@@ -803,4 +803,15 @@
     <string name="download_error_forbidden">服务器拒绝下载请求（HTTP %1$d），该地址可能有防盗链校验，或需要登录态。</string>
     <string name="download_error_not_found">下载地址已失效（HTTP %1$d），请删除该任务后重新获取地址。</string>
     <string name="download_error_http_status">下载请求被服务器拒绝（HTTP %1$d）。</string>
+    <!-- nJAV 女优筛选（高级搜索 chip + 选择器） -->
+    <string name="actress">女优</string>
+    <string name="actress_search_hint">筛选女优</string>
+    <string name="actress_filter_local_hint">仅过滤已加载的女优，下滑可加载更多</string>
+    <string name="actress_loaded_count">已加载 %1$d 位</string>
+    <string name="actress_load_more">加载更多</string>
+    <string name="actress_empty">没有找到女优</string>
+    <string name="actress_no_match">已加载的女优里没有匹配项，可点下方「加载更多」继续找。</string>
+    <string name="actress_list_failed">女优列表加载失败</string>
+    <string name="actress_video_count">%1$d 部影片</string>
+    <string name="actress_debut_year">%1$d 出道</string>
 </resources>

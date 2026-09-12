@@ -49,6 +49,7 @@ import io.github.daisukikaffuchino.han1meviewer.R
 import io.github.daisukikaffuchino.han1meviewer.SEARCH_YEAR_RANGE_END
 import io.github.daisukikaffuchino.han1meviewer.SEARCH_YEAR_RANGE_START
 import io.github.daisukikaffuchino.han1meviewer.logic.DatabaseRepo
+import io.github.daisukikaffuchino.han1meviewer.logic.SettingsRepository
 import io.github.daisukikaffuchino.han1meviewer.logic.entity.HanimeAdvancedSearchHistoryEntity
 import io.github.daisukikaffuchino.han1meviewer.logic.model.SearchOption
 import io.github.daisukikaffuchino.han1meviewer.logic.model.SearchOption.Companion.flatten
@@ -83,6 +84,8 @@ fun AdvancedSearchSheet(
         DatabaseRepo.HanimeAdvancedSearchRepo.getSearchHistories()
     }.collectAsStateWithLifecycle(initialValue = emptyList())
     var dialogState by remember { mutableStateOf<AdvancedSearchDialogState?>(null) }
+    val isNjavSite = SettingsRepository.isNjavSite
+    var showActressPicker by remember { mutableStateOf(false) }
     var selectionVersion by remember { mutableIntStateOf(0) }
     val sheetState = rememberBottomSheetState(
         initialValue = SheetValue.Hidden,
@@ -96,6 +99,7 @@ fun AdvancedSearchSheet(
     val tagLabel = stringResource(R.string.tag)
     val releaseDateLabel = stringResource(R.string.release_date)
     val durationLabel = stringResource(R.string.duration)
+    val actressLabel = stringResource(R.string.actress)
     val tagScopes = remember(viewModel.tags) { buildTagScopeSections(viewModel.tags) }
 
     fun updateSelection(block: () -> Unit) {
@@ -131,6 +135,20 @@ fun AdvancedSearchSheet(
     val durationTitle = remember(selectionVersion, durationLabel) {
         selectedOptionValue(viewModel.durations, viewModel.duration)?.let { "$durationLabel: $it" }
             ?: durationLabel
+    }
+    val actressTitle = remember(selectionVersion, actressLabel) {
+        viewModel.actressName?.let { "$actressLabel: $it" } ?: actressLabel
+    }
+
+    if (showActressPicker) {
+        NjavActressPickerDialog(
+            selectedPath = viewModel.actressPath,
+            onDismiss = { showActressPicker = false },
+            onSelect = { actress ->
+                updateSelection { viewModel.applyActressFilter(actress.path, actress.name) }
+                showActressPicker = false
+            },
+        )
     }
 
     AdvancedSearchDialogHost(
@@ -182,95 +200,129 @@ fun AdvancedSearchSheet(
                 }
                 item {
                     AdvancedSearchFiltersSection(
-                        genreTitle = genreTitle,
-                        genreChecked = viewModel.genre != null,
-                        onClearGenre = { updateSelection { viewModel.genre = null } },
-                        onOpenGenre = {
-                            dialogState = AdvancedSearchDialogState.SingleChoice(
-                                key = "genre",
-                                titleRes = R.string.type,
-                                options = viewModel.genres,
-                                selectedIndex = viewModel.genres.indexOfFirst { it.searchKey == viewModel.genre },
-                                onSelect = { option -> viewModel.genre = option.searchKey },
-                                onReset = { viewModel.genre = null },
-                            )
-                        },
-                        sortTitle = sortTitle,
-                        sortChecked = viewModel.sort != null,
-                        onClearSort = { updateSelection { viewModel.sort = null } },
-                        onOpenSort = {
-                            dialogState = AdvancedSearchDialogState.SingleChoice(
-                                key = "sort",
-                                titleRes = R.string.sort_option,
-                                options = viewModel.sortOptions,
-                                selectedIndex = viewModel.sortOptions.indexOfFirst { it.searchKey == viewModel.sort },
-                                onSelect = { option -> viewModel.sort = option.searchKey },
-                                onReset = { viewModel.sort = null },
-                            )
-                        },
-                        tagTitle = tagTitle,
-                        tagChecked = viewModel.tagMap.isNotEmpty(),
-                        onClearTag = { updateSelection { viewModel.tagMap.clear() } },
-                        onOpenTag = {
-                            dialogState = AdvancedSearchDialogState.MultiChoice(
-                                key = "tag",
-                                titleRes = R.string.tag,
-                                scopes = tagScopes,
-                                selected = selectedTagOptions,
-                                broad = viewModel.broad,
-                                onSave = { selected, broad ->
-                                    viewModel.broad = broad
-                                    viewModel.tagMap =
-                                        groupSelectedTagOptions(selected, viewModel.tags)
-                                },
-                                onReset = { viewModel.tagMap.clear() },
-                            )
-                        },
-                        releaseDateTitle = releaseDateTitle,
-                        releaseDateChecked =
-                            viewModel.year != null || viewModel.month != null || viewModel.approxTime != null,
-                        onClearReleaseDate = {
-                            updateSelection {
-                                viewModel.year = null
-                                viewModel.month = null
-                                viewModel.approxTime = null
+                        chips = buildList {
+                            // 「女优」只有 nJAV 数据源才有 —— hanime 那边没有这个概念，
+                            // 挂上去只会是个点了没反应的死 chip。
+                            if (isNjavSite) {
+                                add(
+                                    FilterChipSpec(
+                                        title = actressTitle,
+                                        checked = viewModel.actressPath != null,
+                                        onClear = { updateSelection { viewModel.clearActressFilter() } },
+                                        onOpen = { showActressPicker = true },
+                                    )
+                                )
                             }
-                        },
-                        onOpenReleaseDate = {
-                            dialogState = AdvancedSearchDialogState.ReleaseDate(
-                                key = "date",
-                                options = viewModel.timeList,
-                                initialApproximate = viewModel.approxTime,
-                                initialYear = viewModel.year,
-                                initialMonth = viewModel.month,
-                                onSaveApproximate = { searchKey ->
-                                    viewModel.approxTime = searchKey
-                                    viewModel.year = null
-                                    viewModel.month = null
-                                },
-                                onSaveSpecific = { year, month ->
-                                    viewModel.year = year
-                                    viewModel.month = month
-                                    viewModel.approxTime = null
-                                },
-                                onReset = {
-                                    viewModel.year = null
-                                    viewModel.month = null
-                                    viewModel.approxTime = null
-                                },
+                            add(
+                                FilterChipSpec(
+                                    title = genreTitle,
+                                    checked = viewModel.genre != null,
+                                    onClear = { updateSelection { viewModel.genre = null } },
+                                    onOpen = {
+                                        dialogState = AdvancedSearchDialogState.SingleChoice(
+                                            key = "genre",
+                                            titleRes = R.string.type,
+                                            options = viewModel.genres,
+                                            selectedIndex = viewModel.genres.indexOfFirst { it.searchKey == viewModel.genre },
+                                            onSelect = { option -> viewModel.genre = option.searchKey },
+                                            onReset = { viewModel.genre = null },
+                                        )
+                                    },
+                                )
                             )
-                        },
-                        durationTitle = durationTitle,
-                        durationChecked = viewModel.duration != null,
-                        onClearDuration = { updateSelection { viewModel.duration = null } },
-                        onOpenDuration = {
-                            dialogState = AdvancedSearchDialogState.SingleChoice(
-                                key = "duration",
-                                titleRes = R.string.duration,
-                                options = viewModel.durations,
-                                selectedIndex = viewModel.durations.indexOfFirst { it.searchKey == viewModel.duration },
-                                onSelect = { option -> viewModel.duration = option.searchKey },
-                                onReset = { viewModel.duration = null },
+                            add(
+                                FilterChipSpec(
+                                    title = sortTitle,
+                                    checked = viewModel.sort != null,
+                                    onClear = { updateSelection { viewModel.sort = null } },
+                                    onOpen = {
+                                        dialogState = AdvancedSearchDialogState.SingleChoice(
+                                            key = "sort",
+                                            titleRes = R.string.sort_option,
+                                            options = viewModel.sortOptions,
+                                            selectedIndex = viewModel.sortOptions.indexOfFirst { it.searchKey == viewModel.sort },
+                                            onSelect = { option -> viewModel.sort = option.searchKey },
+                                            onReset = { viewModel.sort = null },
+                                        )
+                                    },
+                                )
+                            )
+                            add(
+                                FilterChipSpec(
+                                    title = tagTitle,
+                                    checked = viewModel.tagMap.isNotEmpty(),
+                                    onClear = { updateSelection { viewModel.tagMap.clear() } },
+                                    onOpen = {
+                                        dialogState = AdvancedSearchDialogState.MultiChoice(
+                                            key = "tag",
+                                            titleRes = R.string.tag,
+                                            scopes = tagScopes,
+                                            selected = selectedTagOptions,
+                                            broad = viewModel.broad,
+                                            onSave = { selected, broad ->
+                                                viewModel.broad = broad
+                                                viewModel.tagMap =
+                                                    groupSelectedTagOptions(selected, viewModel.tags)
+                                            },
+                                            onReset = { viewModel.tagMap.clear() },
+                                        )
+                                    },
+                                )
+                            )
+                            add(
+                                FilterChipSpec(
+                                    title = releaseDateTitle,
+                                    checked = viewModel.year != null || viewModel.month != null ||
+                                            viewModel.approxTime != null,
+                                    onClear = {
+                                        updateSelection {
+                                            viewModel.year = null
+                                            viewModel.month = null
+                                            viewModel.approxTime = null
+                                        }
+                                    },
+                                    onOpen = {
+                                        dialogState = AdvancedSearchDialogState.ReleaseDate(
+                                            key = "date",
+                                            options = viewModel.timeList,
+                                            initialApproximate = viewModel.approxTime,
+                                            initialYear = viewModel.year,
+                                            initialMonth = viewModel.month,
+                                            onSaveApproximate = { searchKey ->
+                                                viewModel.approxTime = searchKey
+                                                viewModel.year = null
+                                                viewModel.month = null
+                                            },
+                                            onSaveSpecific = { year, month ->
+                                                viewModel.year = year
+                                                viewModel.month = month
+                                                viewModel.approxTime = null
+                                            },
+                                            onReset = {
+                                                viewModel.year = null
+                                                viewModel.month = null
+                                                viewModel.approxTime = null
+                                            },
+                                        )
+                                    },
+                                )
+                            )
+                            add(
+                                FilterChipSpec(
+                                    title = durationTitle,
+                                    checked = viewModel.duration != null,
+                                    onClear = { updateSelection { viewModel.duration = null } },
+                                    onOpen = {
+                                        dialogState = AdvancedSearchDialogState.SingleChoice(
+                                            key = "duration",
+                                            titleRes = R.string.duration,
+                                            options = viewModel.durations,
+                                            selectedIndex = viewModel.durations.indexOfFirst { it.searchKey == viewModel.duration },
+                                            onSelect = { option -> viewModel.duration = option.searchKey },
+                                            onReset = { viewModel.duration = null },
+                                        )
+                                    },
+                                )
                             )
                         },
                     )
@@ -642,71 +694,35 @@ private fun AdvancedSearchHistorySection(
     }
 }
 
+/** 高级搜索面板上的一个筛选 chip。 */
+private data class FilterChipSpec(
+    /** 长按 = 清空这个条件。 */
+    val onClear: () -> Unit,
+    /** 点击 = 打开对应的选择弹窗。 */
+    val onOpen: () -> Unit,
+    val title: String,
+    val checked: Boolean,
+)
+
 @Composable
-private fun AdvancedSearchFiltersSection(
-    genreTitle: String,
-    genreChecked: Boolean,
-    onClearGenre: () -> Unit,
-    onOpenGenre: () -> Unit,
-    sortTitle: String,
-    sortChecked: Boolean,
-    onClearSort: () -> Unit,
-    onOpenSort: () -> Unit,
-    tagTitle: String,
-    tagChecked: Boolean,
-    onClearTag: () -> Unit,
-    onOpenTag: () -> Unit,
-    releaseDateTitle: String,
-    releaseDateChecked: Boolean,
-    onClearReleaseDate: () -> Unit,
-    onOpenReleaseDate: () -> Unit,
-    durationTitle: String,
-    durationChecked: Boolean,
-    onClearDuration: () -> Unit,
-    onOpenDuration: () -> Unit,
-) {
+private fun AdvancedSearchFiltersSection(chips: List<FilterChipSpec>) {
     FlowRow(
         modifier = Modifier.fillMaxWidth(),
         maxItemsInEachRow = 2,
         horizontalArrangement = Arrangement.spacedBy(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        AdvancedSearchChip(
-            title = genreTitle,
-            checked = genreChecked,
-            modifier = Modifier.weight(1f),
-            onLongClick = onClearGenre,
-            onClick = onOpenGenre,
-        )
-        AdvancedSearchChip(
-            title = sortTitle,
-            checked = sortChecked,
-            modifier = Modifier.weight(1f),
-            onLongClick = onClearSort,
-            onClick = onOpenSort,
-        )
-        AdvancedSearchChip(
-            title = tagTitle,
-            checked = tagChecked,
-            modifier = Modifier.weight(1f),
-            onLongClick = onClearTag,
-            onClick = onOpenTag,
-        )
-        AdvancedSearchChip(
-            title = releaseDateTitle,
-            checked = releaseDateChecked,
-            modifier = Modifier.weight(1f),
-            onLongClick = onClearReleaseDate,
-            onClick = onOpenReleaseDate,
-        )
-        AdvancedSearchChip(
-            title = durationTitle,
-            checked = durationChecked,
-            modifier = Modifier.weight(1f),
-            onLongClick = onClearDuration,
-            onClick = onOpenDuration,
-        )
-        Spacer(modifier = Modifier.weight(1f))
+        chips.forEach { chip ->
+            AdvancedSearchChip(
+                title = chip.title,
+                checked = chip.checked,
+                modifier = Modifier.weight(1f),
+                onLongClick = chip.onClear,
+                onClick = chip.onOpen,
+            )
+        }
+        // 奇数个 chip 时补个占位，让最后一行也是两块等宽格子。
+        if (chips.size % 2 == 1) Spacer(modifier = Modifier.weight(1f))
     }
 }
 

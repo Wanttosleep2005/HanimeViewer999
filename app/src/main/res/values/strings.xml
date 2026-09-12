@@ -820,4 +820,15 @@ Recommendations are as follows:\n
     <string name="download_error_forbidden">The server refused the download request (HTTP %1$d). The link may be behind a referer check or require a login session.</string>
     <string name="download_error_not_found">The download address is no longer valid (HTTP %1$d). Delete this task and fetch the address again.</string>
     <string name="download_error_http_status">The download request was rejected by the server (HTTP %1$d).</string>
+    <!-- nJAV actress filter (advanced search chip + picker) -->
+    <string name="actress">Actress</string>
+    <string name="actress_search_hint">Filter actresses</string>
+    <string name="actress_filter_local_hint">Filters the actresses already loaded only — scroll down to load more</string>
+    <string name="actress_loaded_count">%1$d loaded</string>
+    <string name="actress_load_more">Load more</string>
+    <string name="actress_empty">No actress found</string>
+    <string name="actress_no_match">No loaded actress matches. Tap Load more below to keep searching.</string>
+    <string name="actress_list_failed">Failed to load the actress list</string>
+    <string name="actress_video_count">%1$d videos</string>
+    <string name="actress_debut_year">Debuted %1$d</string>
 </resources>

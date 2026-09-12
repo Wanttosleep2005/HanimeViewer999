@@ -7,6 +7,7 @@ import io.github.daisukikaffuchino.han1meviewer.logic.model.HanimeInfo
 import io.github.daisukikaffuchino.han1meviewer.logic.model.HanimePreview
 import io.github.daisukikaffuchino.han1meviewer.logic.model.HanimeVideo
 import io.github.daisukikaffuchino.han1meviewer.logic.model.HomePage
+import io.github.daisukikaffuchino.han1meviewer.logic.model.NjavActress
 import io.github.daisukikaffuchino.han1meviewer.logic.state.PageLoadingState
 import io.github.daisukikaffuchino.han1meviewer.logic.state.VideoLoadingState
 import io.github.daisukikaffuchino.han1meviewer.logic.state.WebsiteState
@@ -206,6 +207,76 @@ object NjavParser {
             )
         )
     }
+
+    //</editor-fold>
+
+    //<editor-fold desc="女优索引">
+
+    /**
+     * 解析女优索引页 `/cn/actresses`（以及它的 `?page=N` 翻页）。
+     *
+     * 只认「`<li>` 里既有 `<h4>`、又有指向 `/actresses/xxx` 的链接」的条目：
+     * 导航菜单里同样有大量 `<li><a href="…">`，靠这两个条件就能滤干净。
+     * `/actresses/ranking` 这类「不是具体某个人」的保留路径由 [ACTRESS_RESERVED] 挡掉。
+     */
+    fun actressList(body: String): MutableList<NjavActress> {
+        val doc = Jsoup.parse(body)
+        val result = LinkedHashMap<String, NjavActress>()
+        doc.select("li").forEach { item ->
+            val href = item.selectFirst("a[href]")?.attr("href").orEmpty()
+            val path = actressPath(href) ?: return@forEach
+            val name = item.selectFirst("h4")?.text()?.trim().orEmpty()
+            if (name.isEmpty()) return@forEach
+            val text = item.text()
+            result.putIfAbsent(
+                name,
+                NjavActress(
+                    name = name,
+                    avatarUrl = item.selectFirst("img[src]")?.attr("src")?.trim().orEmpty(),
+                    videoCount = ACTRESS_VIDEO_COUNT.find(text)?.groupValues?.get(1)
+                        ?.replace(",", "")?.toIntOrNull(),
+                    debutYear = ACTRESS_DEBUT_YEAR.find(text)?.groupValues?.get(1)?.toIntOrNull(),
+                    path = path,
+                )
+            )
+        }
+        return result.values.toMutableList()
+    }
+
+    /**
+     * 从卡片 `href` 里取出 `actresses/<编码后的名字>` 这一段。
+     *
+     * ```
+     * https://njavtv.com/dm288/cn/actresses/%E6%B3%A2%E5%A4%9A%E9%87%8E%E7%B5%90%E8%A1%A3
+     *                              ↓ 丢掉会变的 dm### 前缀 + 语言段
+     * actresses/%E6%B3%A2%E5%A4%9A%E9%87%8E%E7%B5%90%E8%A1%A3
+     * ```
+     *
+     * 不是女优详情的链接（导航、`/actresses/ranking`、`/actresses/genres` 之类）返回 null。
+     */
+    private fun actressPath(href: String): String? {
+        val marker = "/actresses/"
+        val index = href.indexOf(marker)
+        if (index < 0) return null
+        val tail = href.substring(index + marker.length)
+            .substringBefore('?')
+            .substringBefore('#')
+            .trim('/')
+        if (tail.isEmpty() || tail in ACTRESS_RESERVED) return null
+        return "$ACTRESSES_SEGMENT/$tail"
+    }
+
+    /** 女优路径段，与 [NjavNetwork.actressUrl] 拼地址时用的前缀保持一致。 */
+    private const val ACTRESSES_SEGMENT = "actresses"
+
+    /** 索引页上不是「具体某个人」的保留尾段。 */
+    private val ACTRESS_RESERVED = setOf("ranking")
+
+    /** 卡片上的「5668 条影片」。 */
+    private val ACTRESS_VIDEO_COUNT = Regex("""([\d,]+)\s*条影片""")
+
+    /** 卡片上的「2008 出道」。 */
+    private val ACTRESS_DEBUT_YEAR = Regex("""(\d{4})\s*出道""")
 
     //</editor-fold>
 
