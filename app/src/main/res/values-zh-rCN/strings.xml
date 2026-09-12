@@ -939,4 +939,29 @@
     <string name="actress_list_failed">女优列表加载失败</string>
     <string name="actress_video_count">%1$d 部影片</string>
     <string name="actress_debut_year">%1$d 出道</string>
+    <!-- 一键网络自愈：测镜像与中转、自动落到最快、复测确认 -->
+    <string name="self_heal">一键网络自愈</string>
+    <string name="self_heal_summary">给镜像站和中转节点测速，自动切到最快的那条，再复测确认</string>
+    <string name="self_heal_title">网络自愈</string>
+    <string name="self_heal_desc">自愈只会帮你选最快的镜像与中转节点，不会替你打开或关闭代理、DoH、中转这些开关。</string>
+    <string name="self_heal_run">开始自愈</string>
+    <string name="self_heal_rerun">再跑一次</string>
+    <string name="self_heal_step_mirror_probe">镜像站测速</string>
+    <string name="self_heal_step_relay_probe">中转节点测速</string>
+    <string name="self_heal_step_mirror_apply">切到最快镜像</string>
+    <string name="self_heal_step_relay_apply">切到最快节点</string>
+    <string name="self_heal_step_verify">复测确认</string>
+    <string name="self_heal_status_ok">正常</string>
+    <string name="self_heal_status_changed">已切换</string>
+    <string name="self_heal_status_skipped">已跳过</string>
+    <string name="self_heal_status_failed">失败</string>
+    <string name="self_heal_result">改动 %1$d · 失败 %2$d</string>
+    <string name="self_heal_log_fine">一切正常</string>
+    <string name="self_heal_log_restart_tag">镜像已切换，需重启</string>
+    <string name="self_heal_restart_hint">镜像已切换，需要重启应用才会生效。</string>
+    <string name="self_heal_restart_now">立即重启</string>
+    <string name="self_heal_history">最近几次</string>
+    <string name="self_heal_history_empty">还没有跑过自愈</string>
+    <string name="self_heal_clear_log">清空记录</string>
+    <string name="self_heal_log_cleared">自愈记录已清空</string>
 </resources>

@@ -23,6 +23,10 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.daisukikaffuchino.han1meviewer.EMPTY_STRING
 import io.github.daisukikaffuchino.han1meviewer.HanimeConstants
 import io.github.daisukikaffuchino.han1meviewer.logic.SettingsRepository
+import io.github.daisukikaffuchino.han1meviewer.logic.HealReport
+import io.github.daisukikaffuchino.han1meviewer.logic.HealStatus
+import io.github.daisukikaffuchino.han1meviewer.logic.HealStepKind
+import io.github.daisukikaffuchino.han1meviewer.logic.NetworkSelfHeal
 import io.github.daisukikaffuchino.han1meviewer.logic.model.MirrorNode
 import io.github.daisukikaffuchino.han1meviewer.logic.model.MirrorValidation
 import io.github.daisukikaffuchino.han1meviewer.logic.model.RelayNodeValidation
@@ -49,12 +53,15 @@ import io.github.daisukikaffuchino.han1meviewer.ui.screen.settings.NetworkSettin
 import io.github.daisukikaffuchino.han1meviewer.ui.screen.settings.NetworkSettingsUiState
 import io.github.daisukikaffuchino.han1meviewer.ui.screen.settings.RelayNodeActions
 import io.github.daisukikaffuchino.han1meviewer.ui.screen.settings.RelayNodeUiState
+import io.github.daisukikaffuchino.han1meviewer.ui.screen.settings.SelfHealActions
+import io.github.daisukikaffuchino.han1meviewer.ui.screen.settings.SelfHealUiState
 import io.github.daisukikaffuchino.utils.ActivityManager
 import io.github.daisukikaffuchino.utils.applicationContext
 import io.github.daisukikaffuchino.utils.SonnerToast
 import okhttp3.Request
 import java.net.InetAddress
 import java.util.concurrent.Executors
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
@@ -86,6 +93,12 @@ fun NetworkSettingsRouteScreen(embedded: Boolean = false) {
     var isMirrorTesting by remember { mutableStateOf(false) }
     var mirrorVersion by remember { mutableIntStateOf(0) }
     var lastMirrorValidation by remember { mutableStateOf<MirrorValidation?>(null) }
+    // ── 一键自愈 ────────────────────────────────────────────────
+    var showSelfHeal by remember { mutableStateOf(false) }
+    var selfHealReport by remember { mutableStateOf<HealReport?>(null) }
+    var isSelfHealing by remember { mutableStateOf(false) }
+    var selfHealLogVersion by remember { mutableIntStateOf(0) }
+    var selfHealJob by remember { mutableStateOf<Job?>(null) }
     var showDomainRestartConfirm by remember { mutableStateOf(false) }
     var showHostsRestartConfirm by remember { mutableStateOf(false) }
     var showCustomHostsValidationError by remember { mutableStateOf<List<String>?>(null) }
@@ -215,6 +228,7 @@ fun NetworkSettingsRouteScreen(embedded: Boolean = false) {
             stopDelayTest()
             stopDohTest()
             diagJob?.cancel()
+            selfHealJob?.cancel()
             executor.shutdownNow()
         }
     }
@@ -373,6 +387,78 @@ fun NetworkSettingsRouteScreen(embedded: Boolean = false) {
         onDismiss = {
             showMirrorPool = false
             lastMirrorValidation = null
+        },
+    )
+
+    /**
+     * 一键自愈的界面状态。
+     *
+     * 「是否需要重启」不看 [HealReport.changedCount]，只看**镜像那一步是否真的改了**：
+     * 换了中转节点是热生效的，不需要重启；只有换镜像才要。
+     */
+    val selfHealUi = remember(settings, selfHealReport, isSelfHealing, selfHealLogVersion) {
+        val report = selfHealReport
+        SelfHealUiState(
+            report = report,
+            running = isSelfHealing,
+            log = NetworkSelfHeal.log(),
+            needsRestart = report?.finished == true && report.steps.any {
+                it.kind == HealStepKind.MirrorApply && it.status == HealStatus.Changed
+            },
+        )
+    }
+
+    val selfHealActions = SelfHealActions(
+        onRun = {
+            if (!isSelfHealing) {
+                selfHealJob?.cancel()
+                selfHealReport = null
+                isSelfHealing = true
+                selfHealJob = coroutineScope.launch {
+                    try {
+                        NetworkSelfHeal.run(context.getString(R.string.relay_node_builtin))
+                            .collect { selfHealReport = it }
+                        // 自愈可能动了镜像/节点，两个池子的测速结论与生效项都变了，
+                        // 让面板重算，免得回到设置页还显示旧状态。
+                        selfHealLogVersion++
+                        mirrorVersion++
+                        relayNodeVersion++
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (t: Throwable) {
+                        LogUtil.w("NET_HEAL", "自愈失败：${t.message}")
+                    } finally {
+                        isSelfHealing = false
+                    }
+                }
+            }
+        },
+        onRestart = {
+            // 设置已经由 NetworkSelfHeal 落库，这里复用「域名切换 → 重启」那条既有流程：
+            // 待确认值留空 = 保持当前值，只借用它的确认框与 logout+restart。
+            showSelfHeal = false
+            pendingDomainValue = ""
+            pendingSiteSource = null
+            pendingSiteSourceSwitch = false
+            pendingUseCustomMirrorSite = SettingsRepository.useCustomMirrorSite
+            pendingCustomMirrorSite = SettingsRepository.customMirrorSite
+            pendingAppendCustomMirrorPath = SettingsRepository.appendCustomMirrorPath
+            showDomainRestartConfirm = true
+        },
+        onClearLog = {
+            coroutineScope.launch {
+                NetworkSelfHeal.clearLog()
+                selfHealLogVersion++
+                SonnerToast.success(R.string.self_heal_log_cleared)
+            }
+        },
+        onDismiss = {
+            selfHealJob?.cancel()
+            selfHealJob = null
+            isSelfHealing = false
+            // 半截的报告没有结论、也没有配色依据，留着只会让人以为界面卡住了。
+            if (selfHealReport?.finished != true) selfHealReport = null
+            showSelfHeal = false
         },
     )
 
@@ -546,6 +632,10 @@ fun NetworkSettingsRouteScreen(embedded: Boolean = false) {
         showMirrorPool = showMirrorPool,
         mirrorUi = mirrorUi,
         mirrorActions = mirrorActions,
+        showSelfHeal = showSelfHeal,
+        selfHealUi = selfHealUi,
+        selfHealActions = selfHealActions,
+        onOpenSelfHeal = { showSelfHeal = true },
         onOpenMirrorPool = {
             showMirrorPool = true
             lastMirrorValidation = null

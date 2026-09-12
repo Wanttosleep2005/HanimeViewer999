@@ -956,4 +956,29 @@ Recommendations are as follows:\n
     <string name="actress_list_failed">Failed to load the actress list</string>
     <string name="actress_video_count">%1$d videos</string>
     <string name="actress_debut_year">Debuted %1$d</string>
+    <!-- One-tap network self-heal: probes mirrors + relay nodes, applies the fastest, then verifies -->
+    <string name="self_heal">One-tap network self-heal</string>
+    <string name="self_heal_summary">Test mirror sites and relay nodes, switch to the fastest ones automatically, then verify</string>
+    <string name="self_heal_title">Network self-heal</string>
+    <string name="self_heal_desc">Healing only picks the fastest mirror and relay node for you — it never turns your proxy, DoH or relay switches on or off.</string>
+    <string name="self_heal_run">Start healing</string>
+    <string name="self_heal_rerun">Run again</string>
+    <string name="self_heal_step_mirror_probe">Test mirror sites</string>
+    <string name="self_heal_step_relay_probe">Test relay nodes</string>
+    <string name="self_heal_step_mirror_apply">Switch to the fastest mirror</string>
+    <string name="self_heal_step_relay_apply">Switch to the fastest relay node</string>
+    <string name="self_heal_step_verify">Verify after changes</string>
+    <string name="self_heal_status_ok">OK</string>
+    <string name="self_heal_status_changed">Changed</string>
+    <string name="self_heal_status_skipped">Skipped</string>
+    <string name="self_heal_status_failed">Failed</string>
+    <string name="self_heal_result">Changed %1$d · failed %2$d</string>
+    <string name="self_heal_log_fine">All fine</string>
+    <string name="self_heal_log_restart_tag">mirror switched, needs restart</string>
+    <string name="self_heal_restart_hint">The mirror was switched. Restart the app for it to take effect.</string>
+    <string name="self_heal_restart_now">Restart now</string>
+    <string name="self_heal_history">Recent runs</string>
+    <string name="self_heal_history_empty">No self-heal runs yet</string>
+    <string name="self_heal_clear_log">Clear history</string>
+    <string name="self_heal_log_cleared">Self-heal history cleared</string>
 </resources>

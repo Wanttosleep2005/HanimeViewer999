@@ -164,6 +164,15 @@ data class AppSettings(
      */
     val extraMirrorsJson: String = "",
     /**
+     * 一键自愈的历史记录（JSON 数组，最多 10 条）。
+     *
+     * 只存「改动几处 / 失败几处 / 是否切了镜像」这几个数字，文案由界面按当前语言现拼 ——
+     * 存成文案的话，换语言后历史记录会永远停在当时那种语言。
+     *
+     * 由 [io.github.daisukikaffuchino.han1meviewer.logic.NetworkSelfHeal] 读写。
+     */
+    val selfHealLogJson: String = "",
+    /**
      * 置顶的搜索词（JSON 数组）。置顶的排在搜索结果页历史列表最前，且不会被自动裁剪。
      *
      * 放在设置里而不是新开一张表：置顶只是一个「顺序」问题，为它加一列就要写一次

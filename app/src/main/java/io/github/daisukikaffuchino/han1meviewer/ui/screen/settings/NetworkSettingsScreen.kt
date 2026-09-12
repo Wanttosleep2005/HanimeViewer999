@@ -156,6 +156,11 @@ fun NetworkSettingsScreen(
     mirrorUi: MirrorUiState = MirrorUiState(),
     mirrorActions: MirrorActions = MirrorActions(),
     onOpenMirrorPool: () -> Unit = {},
+    /** 一键网络自愈。 */
+    showSelfHeal: Boolean = false,
+    selfHealUi: SelfHealUiState = SelfHealUiState(),
+    selfHealActions: SelfHealActions = SelfHealActions(),
+    onOpenSelfHeal: () -> Unit = {},
     embedded: Boolean = false,
 ) {
     var showDomainDialog by rememberSaveable { mutableStateOf(false) }
@@ -290,6 +295,13 @@ fun NetworkSettingsScreen(
         )
     }
 
+    if (showSelfHeal) {
+        SelfHealDialog(
+            state = selfHealUi,
+            actions = selfHealActions,
+        )
+    }
+
     val content: @Composable () -> Unit = {
         Column(modifier = Modifier.fillMaxWidth()) {
             if (embedded) {
@@ -397,6 +409,12 @@ fun NetworkSettingsScreen(
                     summary = stringResource(R.string.diag_run_summary),
                     iconRes = R.drawable.ic_dns,
                     onClick = onOpenDiagnostics,
+                )
+                SettingNavigationItem(
+                    title = stringResource(R.string.self_heal),
+                    summary = stringResource(R.string.self_heal_summary),
+                    iconRes = R.drawable.ic_heal,
+                    onClick = onOpenSelfHeal,
                 )
             }
         }
