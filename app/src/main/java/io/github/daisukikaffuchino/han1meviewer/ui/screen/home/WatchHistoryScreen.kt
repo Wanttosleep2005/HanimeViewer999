@@ -48,6 +48,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -72,6 +73,7 @@ import io.github.daisukikaffuchino.han1meviewer.R
 import io.github.daisukikaffuchino.han1meviewer.logic.entity.WatchHistoryEntity
 import io.github.daisukikaffuchino.han1meviewer.logic.model.HanimeInfo
 import io.github.daisukikaffuchino.han1meviewer.logic.model.OnlineWatchHistorySort
+import io.github.daisukikaffuchino.han1meviewer.logic.model.WatchStats
 import io.github.daisukikaffuchino.han1meviewer.logic.state.PageLoadingState
 import io.github.daisukikaffuchino.han1meviewer.logic.state.WebsiteState
 import io.github.daisukikaffuchino.han1meviewer.ui.component.CardContainerSurface
@@ -99,6 +101,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
+import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 
@@ -132,12 +135,55 @@ fun WatchHistoryTabScreen(
     val currentOnlineLoadedPageCount by onlineLoadedPageCount.collectAsState()
     val currentOnlineIsLoadingMore by onlineIsLoadingMore.collectAsState()
     var showDeleteAllLocalDialog by rememberSaveable { mutableStateOf(false) }
+    var showStats by rememberSaveable { mutableStateOf(false) }
+    var selectionMode by rememberSaveable { mutableStateOf(false) }
+    var showBatchDeleteDialog by remember { mutableStateOf(false) }
+    /** 多选的是 id 而不是下标：列表是按 watchDate 排序的，删一条之后下标会整体位移。 */
+    val selectedIds = remember { mutableStateListOf<Int>() }
+    val watchStats = remember(localHistories) { WatchStats.from(localHistories) }
 
     LaunchedEffect(pagerState.currentPage) {
         if (pagerState.currentPage == 1 && currentOnlineItems.isEmpty() && currentOnlineLoadedPageCount == 0 && currentOnlineState is PageLoadingState.Loading) {
             onRefreshOnline(currentOnlineSort)
         }
     }
+
+    // 删除后要清掉已经不存在的选中项，否则「已选 3 项」里可能有两项早就没了。
+    LaunchedEffect(localHistories) {
+        if (selectionMode) {
+            val alive = localHistories.map { it.id }.toSet()
+            selectedIds.retainAll(alive)
+            if (alive.isEmpty()) selectionMode = false
+        }
+    }
+
+    fun exitSelection() {
+        selectionMode = false
+        selectedIds.clear()
+    }
+
+    if (showStats) {
+        WatchStatsScreen(
+            stats = watchStats,
+            onBack = { showStats = false },
+        )
+        return
+    }
+
+    ConfirmDialog(
+        visible = showBatchDeleteDialog,
+        title = stringResource(R.string.delete_history),
+        message = stringResource(R.string.sure_to_delete_selected, selectedIds.size),
+        confirmText = stringResource(R.string.delete),
+        dismissText = stringResource(R.string.cancel),
+        onConfirm = {
+            val targets = localHistories.filter { it.id in selectedIds }
+            showBatchDeleteDialog = false
+            exitSelection()
+            targets.forEach(onDeleteLocalHistory)
+        },
+        onDismiss = { showBatchDeleteDialog = false },
+    )
 
     ConfirmDialog(
         visible = showDeleteAllLocalDialog,
@@ -153,16 +199,67 @@ fun WatchHistoryTabScreen(
     )
 
     HanimeScaffold(
-        title = stringResource(R.string.watch_history),
-        onBack = onBack,
+        title = if (selectionMode) {
+            stringResource(R.string.watch_history_selected_count, selectedIds.size)
+        } else {
+            stringResource(R.string.watch_history)
+        },
+        // 多选时返回键先退出多选，而不是直接离开页面 —— 否则长按选中一条后手一抖就退出了。
+        onBack = {
+            if (selectionMode) exitSelection() else onBack()
+        },
         contentHorizontalPadding = 0.dp,
+        actions = {
+            if (pagerState.currentPage == 0 && localHistories.isNotEmpty()) {
+                if (selectionMode) {
+                    val allSelected = selectedIds.size == localHistories.size
+                    FilledIconButton(
+                        onClick = {
+                            if (allSelected) {
+                                selectedIds.clear()
+                            } else {
+                                selectedIds.clear()
+                                selectedIds.addAll(localHistories.map { it.id })
+                            }
+                        },
+                    ) {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_select_all),
+                            contentDescription = stringResource(R.string.watch_history_select_all),
+                        )
+                    }
+                } else {
+                    FilledIconButton(onClick = { showStats = true }) {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_count),
+                            contentDescription = stringResource(R.string.watch_stats),
+                        )
+                    }
+                }
+            }
+        },
         floatingActionButton = {
-            WatchHistoryClearFab(
-                visible = pagerState.currentPage == 0 &&
-                        localHistories.isNotEmpty() &&
-                        showClearFab,
-                onClick = { showDeleteAllLocalDialog = true },
-            )
+            if (selectionMode) {
+                ExtendedFloatingActionButton(
+                    text = { Text(stringResource(R.string.watch_history_delete_selected)) },
+                    icon = {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_delete),
+                            contentDescription = null,
+                        )
+                    },
+                    onClick = {
+                        if (selectedIds.isNotEmpty()) showBatchDeleteDialog = true
+                    },
+                )
+            } else {
+                WatchHistoryClearFab(
+                    visible = pagerState.currentPage == 0 &&
+                            localHistories.isNotEmpty() &&
+                            showClearFab,
+                    onClick = { showDeleteAllLocalDialog = true },
+                )
+            }
         },
     ) { paddingValues ->
         Column(
@@ -193,6 +290,20 @@ fun WatchHistoryTabScreen(
                         onOpenVideo = onOpenLocalVideo,
                         onDeleteHistory = onDeleteLocalHistory,
                         listState = localListState,
+                        selectionMode = selectionMode,
+                        selectedIds = selectedIds,
+                        onToggleSelection = { history ->
+                            if (selectedIds.contains(history.id)) {
+                                selectedIds.remove(history.id)
+                                if (selectedIds.isEmpty()) selectionMode = false
+                            } else {
+                                selectedIds.add(history.id)
+                            }
+                        },
+                        onLongPress = { history ->
+                            selectionMode = true
+                            if (!selectedIds.contains(history.id)) selectedIds.add(history.id)
+                        },
                     )
 
                     else -> OnlineWatchHistoryScreen(
@@ -220,8 +331,14 @@ private fun WatchHistoryListContent(
     onOpenVideo: (WatchHistoryEntity) -> Unit,
     onDeleteHistory: (WatchHistoryEntity) -> Unit,
     listState: LazyListState = rememberLazyListState(),
+    selectionMode: Boolean = false,
+    selectedIds: List<Int> = emptyList(),
+    onToggleSelection: (WatchHistoryEntity) -> Unit = {},
+    onLongPress: (WatchHistoryEntity) -> Unit = {},
 ) {
     var pendingDelete by remember { mutableStateOf<WatchHistoryEntity?>(null) }
+    // 分组只跟「有哪些记录」有关，跟选中状态无关；按 histories 缓存，避免每帧重算。
+    val groups = remember(histories) { buildHistoryGroups(histories, System.currentTimeMillis()) }
 
     ConfirmDialog(
         visible = pendingDelete != null,
@@ -253,15 +370,105 @@ private fun WatchHistoryListContent(
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            items(histories, key = { it.id }) { history ->
-                WatchHistoryCard(
-                    history = history,
-                    onClick = { onOpenVideo(history) },
-                    onDeleteClick = { pendingDelete = history },
-                )
+            groups.forEach { (titleRes, groupHistories) ->
+                item(key = "watch_history_header_$titleRes") {
+                    HistoryGroupHeader(
+                        title = stringResource(titleRes),
+                        count = groupHistories.size,
+                    )
+                }
+                items(groupHistories, key = { it.id }) { history ->
+                    val selected = selectedIds.contains(history.id)
+                    WatchHistoryCard(
+                        history = history,
+                        selected = selected,
+                        selectionMode = selectionMode,
+                        onClick = {
+                            if (selectionMode) onToggleSelection(history) else onOpenVideo(history)
+                        },
+                        onLongClick = {
+                            if (selectionMode) onToggleSelection(history) else onLongPress(history)
+                        },
+                        onDeleteClick = { pendingDelete = history },
+                    )
+                }
             }
         }
     }
+}
+
+/** 分组标题：一条左对齐的说明 + 右侧条数。 */
+@Composable
+private fun HistoryGroupHeader(
+    title: String,
+    count: Int,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 4.dp, top = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold,
+        )
+        Text(
+            text = count.toString(),
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+/**
+ * 把按时间倒序的历史切成「今天 / 昨天 / 本周稍早 / 本月稍早 / 更早」。
+ *
+ * 用 `LinkedHashMap` 保序，所以组的先后天然跟随输入顺序（也就是时间倒序），
+ * 不需要再排一次。返回的是「标题资源 id → 该组记录」。
+ */
+private fun buildHistoryGroups(
+    histories: List<WatchHistoryEntity>,
+    now: Long,
+): List<Pair<Int, List<WatchHistoryEntity>>> {
+    val grouped = LinkedHashMap<Int, MutableList<WatchHistoryEntity>>()
+    histories.forEach { history ->
+        val key = watchHistoryGroupOf(history.watchDate, now)
+        grouped.getOrPut(key) { mutableListOf() }.add(history)
+    }
+    return grouped.map { it.key to it.value.toList() }
+}
+
+private fun watchHistoryGroupOf(watchDate: Long, now: Long): Int {
+    val cal = Calendar.getInstance()
+
+    fun startOfDay(ts: Long): Long {
+        cal.timeInMillis = ts
+        cal.set(Calendar.HOUR_OF_DAY, 0)
+        cal.set(Calendar.MINUTE, 0)
+        cal.set(Calendar.SECOND, 0)
+        cal.set(Calendar.MILLISECOND, 0)
+        return cal.timeInMillis
+    }
+
+    // 与卡片、统计面板一致的秒/毫秒兼容判据。
+    val ts = if (watchDate < 9_999_999_999L) watchDate * 1000 else watchDate
+    val todayStart = startOfDay(now)
+    if (ts >= todayStart) return R.string.watch_history_group_today
+    if (ts >= todayStart - 86_400_000L) return R.string.watch_history_group_yesterday
+
+    cal.firstDayOfWeek = Calendar.MONDAY
+    cal.timeInMillis = todayStart
+    cal.set(Calendar.DAY_OF_WEEK, Calendar.MONDAY)
+    if (ts >= startOfDay(cal.timeInMillis)) return R.string.watch_history_group_this_week
+
+    cal.timeInMillis = todayStart
+    cal.set(Calendar.DAY_OF_MONTH, 1)
+    if (ts >= startOfDay(cal.timeInMillis)) return R.string.watch_history_group_this_month
+
+    return R.string.watch_history_group_earlier
 }
 
 @Composable
@@ -593,6 +800,9 @@ private fun WatchHistoryCard(
     history: WatchHistoryEntity,
     onClick: () -> Unit,
     onDeleteClick: () -> Unit,
+    selected: Boolean = false,
+    selectionMode: Boolean = false,
+    onLongClick: () -> Unit = {},
 ) {
     val view = LocalView.current
     val fixTimestamp = { ts: Long -> if (ts < 9999999999L) ts * 1000 else ts }
@@ -613,6 +823,7 @@ private fun WatchHistoryCard(
     CardContainerSurface(
         modifier = Modifier.fillMaxWidth(),
         shape = cardShape,
+        color = if (selected) MaterialTheme.colorScheme.primaryContainer else null,
     ) {
         Row(
             modifier = Modifier
@@ -624,7 +835,10 @@ private fun WatchHistoryCard(
                         VibrationUtil.performHapticFeedback(view)
                         onClick()
                     },
-                    onLongClick = {},
+                    onLongClick = {
+                        VibrationUtil.performHapticFeedback(view)
+                        onLongClick()
+                    },
                 )
                 .padding(12.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -685,39 +899,56 @@ private fun WatchHistoryCard(
                         .padding(top = 4.dp),
                     horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.End),
                 ) {
-                    AssistChip(
-                        onClick = {
-                            VibrationUtil.performHapticFeedback(view)
-                            onClick()
-                        },
-                        label = {
-                            Text(
-                                stringResource(R.string.watch_history_resume_watch),
-                                style = MaterialTheme.typography.labelMedium
-                            )
-                        },
-                        leadingIcon = {
-                            Icon(
-                                painter = painterResource(R.drawable.ic_history),
-                                contentDescription = null,
-                                modifier = Modifier.size(14.dp),
-                            )
-                        },
-                        colors = AssistChipDefaults.assistChipColors(
-                            containerColor = MaterialTheme.colorScheme.primaryContainer, // 改用 primary 强化引导
-                            labelColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                        ),
-                        modifier = Modifier.height(28.dp)
-                    )
-                    FilledIconButton(
-                        onClick = onDeleteClick,
-                        modifier = Modifier.size(25.dp)
-                    ) {
+                    if (selectionMode) {
+                        // 多选态下把「继续观看 / 删除」换成选中标记：这两个按钮此刻点了
+                        // 只会跟多选打架，而且容易误删。
                         Icon(
-                            painter = painterResource(R.drawable.ic_delete),
-                            contentDescription = stringResource(R.string.delete_history),
-                            modifier = Modifier.size(16.dp)
+                            painter = painterResource(
+                                if (selected) R.drawable.ic_check_circle else R.drawable.ic_remove_selection
+                            ),
+                            contentDescription = null,
+                            tint = if (selected) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            },
+                            modifier = Modifier.size(22.dp),
                         )
+                    } else {
+                        AssistChip(
+                            onClick = {
+                                VibrationUtil.performHapticFeedback(view)
+                                onClick()
+                            },
+                            label = {
+                                Text(
+                                    stringResource(R.string.watch_history_resume_watch),
+                                    style = MaterialTheme.typography.labelMedium
+                                )
+                            },
+                            leadingIcon = {
+                                Icon(
+                                    painter = painterResource(R.drawable.ic_history),
+                                    contentDescription = null,
+                                    modifier = Modifier.size(14.dp),
+                                )
+                            },
+                            colors = AssistChipDefaults.assistChipColors(
+                                containerColor = MaterialTheme.colorScheme.primaryContainer, // 改用 primary 强化引导
+                                labelColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                            ),
+                            modifier = Modifier.height(28.dp)
+                        )
+                        FilledIconButton(
+                            onClick = onDeleteClick,
+                            modifier = Modifier.size(25.dp)
+                        ) {
+                            Icon(
+                                painter = painterResource(R.drawable.ic_delete),
+                                contentDescription = stringResource(R.string.delete_history),
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
                     }
                 }
             }

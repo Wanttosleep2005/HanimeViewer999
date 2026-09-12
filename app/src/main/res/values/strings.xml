@@ -730,6 +730,31 @@ Recommendations are as follows:\n
     <string name="horizontal_card_count_range_medium" translatable="false">600-839dp</string>
     <string name="horizontal_card_count_range_expanded" translatable="false">≥840dp</string>
     <string name="watch_history_minutes_short">%1$dm</string>
+    <string name="watch_stats">Watch statistics</string>
+    <string name="watch_stats_empty">No watch history yet — go watch something first.</string>
+    <string name="watch_stats_total">Watched</string>
+    <string name="watch_stats_this_month">This month</string>
+    <string name="watch_stats_today">Today</string>
+    <string name="watch_stats_streak_current">Day streak</string>
+    <string name="watch_stats_streak_longest">Longest streak</string>
+    <string name="watch_stats_active_days">Active days</string>
+    <string name="watch_stats_last7">Last 7 days</string>
+    <string name="watch_stats_habit">Habits</string>
+    <string name="watch_stats_avg_per_day">Average %1$s per active day</string>
+    <string name="watch_stats_busiest_hour">Most watched hours: %1$s</string>
+    <string name="watch_stats_busiest_weekday">Most watched day: %1$s</string>
+    <string name="watch_stats_span">Range: %1$s</string>
+    <string name="watch_history_group_today">Today</string>
+    <string name="watch_history_group_yesterday">Yesterday</string>
+    <string name="watch_history_group_this_week">Earlier this week</string>
+    <string name="watch_history_group_this_month">Earlier this month</string>
+    <string name="watch_history_group_earlier">Earlier</string>
+    <string name="watch_history_selected_count">%1$d selected</string>
+    <string name="watch_history_select_all">Select all</string>
+    <string name="watch_history_exit_selection">Exit selection</string>
+    <string name="watch_history_long_press_hint">Long-press an item to multi-select</string>
+    <string name="watch_history_delete_selected">Delete selected</string>
+    <string name="sure_to_delete_selected">Delete the %1$d selected records?</string>
     <string name="import_progress_format" translatable="false">%d / %d（%d%%）</string>
     <string name="blank_brackets" translatable="false">( %1$d )</string>
     <string name="download_progress_percent" translatable="false">%1$d%%</string>
