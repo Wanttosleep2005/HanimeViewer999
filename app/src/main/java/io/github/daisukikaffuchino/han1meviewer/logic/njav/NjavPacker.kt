@@ -50,7 +50,7 @@ object NjavPacker {
     }
 
     private val M3U8 by lazy {
-        compileRegex("""https?://[^\s'"\\<>]+\.m3u8""")
+        compileRegex("""https?://[^\s'"\\<>]+\.m3u8(?:\?[^\s'"\\<>#]*)?""")
     }
 
     /**

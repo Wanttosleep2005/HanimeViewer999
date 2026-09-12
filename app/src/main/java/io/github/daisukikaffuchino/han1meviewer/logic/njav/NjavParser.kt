@@ -11,6 +11,7 @@ import io.github.daisukikaffuchino.han1meviewer.logic.state.PageLoadingState
 import io.github.daisukikaffuchino.han1meviewer.logic.state.VideoLoadingState
 import io.github.daisukikaffuchino.han1meviewer.logic.state.WebsiteState
 import kotlinx.datetime.LocalDate
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Element
 
@@ -250,7 +251,9 @@ object NjavParser {
      * 所以自适应的主列表必须放最后，普通用户默认就能拿到最好的画质。
      */
     private fun buildVideoUrls(urls: List<String>): ResolutionLinkMap {
-        val master = urls.firstOrNull { it.endsWith("/playlist.m3u8", ignoreCase = true) }
+        val master = urls.firstOrNull {
+            it.toHttpUrlOrNull()?.encodedPath?.endsWith("/playlist.m3u8", ignoreCase = true) == true
+        }
         val map = linkedMapOf<String, HanimeLink>()
         urls.filter { it != master }
             .distinct()

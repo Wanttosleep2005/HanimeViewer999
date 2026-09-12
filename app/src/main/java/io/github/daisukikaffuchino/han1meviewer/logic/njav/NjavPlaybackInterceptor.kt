@@ -10,7 +10,7 @@ import okhttp3.Response
 import java.util.concurrent.TimeUnit
 
 /**
- * 给 nJAV 的播放链路兜底注入防盗链头。
+ * 给 nJAV 的播放与下载链路注入防盗链头。
  *
  * 视频源 `surrit.com` 的 **m3u8 与每一个分片**都必须带 `Referer`，
  * 否则 Cloudflare 直接回 403（实测：不带 → `403` + HTML 错误页；带上 → `200`）。
@@ -19,29 +19,20 @@ import java.util.concurrent.TimeUnit
  * 所以在 **OkHttp 层面再兜一道**：只要是该 CDN 的请求、且调用方没显式指定 `Referer`，
  * 就补上。成本几乎为零，但能彻底排除「头没带上 → 403 → 视频 0:00 / 0」这一类故障。
  *
- * ⚠️ 只在**播放链路**的 client 上挂，别挂到页面抓取的 client 上——
- * 那里 `NjavNetwork` 自己会加，重复注入反而容易在排查时混淆。
+ * 作为 network interceptor 安装，让重定向后的 CDN 请求也能补齐请求头。
  */
 class NjavPlaybackInterceptor : Interceptor {
 
     override fun intercept(chain: Interceptor.Chain): Response {
         val request = chain.request()
-        val host = request.url.host.lowercase()
-        if (host !in HEADER_HOSTS) return chain.proceed(request)
+        val headers = NjavNetwork.playbackHeadersFor(request.url.toString())
+        if (headers.isEmpty()) return chain.proceed(request)
 
         val builder = request.newBuilder()
-        if (request.header("Referer").isNullOrBlank()) {
-            builder.header("Referer", NjavNetwork.REFERER)
-        }
-        if (request.header("Origin").isNullOrBlank()) {
-            builder.header("Origin", NjavNetwork.ORIGIN)
+        headers.forEach { (name, value) ->
+            if (request.header(name).isNullOrBlank()) builder.header(name, value)
         }
         return chain.proceed(builder.build())
-    }
-
-    companion object {
-        /** 需要防盗链头的域名（含未来的同级 CDN 子域）。 */
-        private val HEADER_HOSTS = setOf("surrit.com", "fourhoi.com")
     }
 }
 
@@ -84,7 +75,7 @@ object PlaybackHttpClient {
             .dns(HDns())
             .proxySelector(HProxySelector())
             .proxyAuthenticator(HProxyAuthenticator.http)
-            .addInterceptor(NjavPlaybackInterceptor())
+            .addNetworkInterceptor(NjavPlaybackInterceptor())
             .build()
     }
 }

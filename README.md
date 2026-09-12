@@ -47,6 +47,7 @@ Han1meViewer 是一个使用 Kotlin 开发的 Android 客户端，用于浏览�
 
 ### 当前功能与重构
 
+- 支持 Hanime 与 NJAV 站点浏览、搜索和播放；下载管理支持 Hanime 直链、NJAV HLS 分片下载、断点续传和下载限速。
 - 使用 Material 3 和 Compose 重构主要页面、卡片、列表、弹窗和播放器界面，拥有更精致的 UI 和更好的一致性。
 - 主导航迁移至 Navigation 3，使用统一路由、顶层返回栈、页面级状态保存和预测性返回；登录、Cookie 手动导入及 Cloudflare 验证迁移到单 Activity 架构。
 - 将应用设置从 SharedPreferences 迁移到 Preferences DataStore，网络、Cookie、下载、播放器、主题、语言、签到、首页和备份等设置使用统一的数据流和仓储。
@@ -62,6 +63,14 @@ Han1meViewer 是一个使用 Kotlin 开发的 Android 客户端，用于浏览�
 - 播放页推荐区和经典平板侧栏改用惰性列表，避免超大离屏图层导致 RenderThread 崩溃；搜索筛选标签改为连续折叠，减少滚动抖动。
 - 优化了超大字号下的标题显示和横屏挖孔区域安全边距，在所有设备上的体验更一致。
 - 强化 Cloudflare 验证后的 Cookie 主机隔离、并发等待、取消与超时处理；退出登录后及时清理相关状态。
+
+## 26.3.2-mod.7.3 更新
+
+- **修复 NJAV 下载 403（真凶是 HTTP 版本，不是防盗链）**：下载用的 OkHttpClient 为兼容 Hanime 直链一直钉死 HTTP/1.1，而 NJAV 的 CDN（surrit.com，Cloudflare）会按 HTTP 层指纹拦截 —— 同样的 URL 与 UA / Referer / Origin，**HTTP/1.1 一律 403，协商到 h2 就是 200 / 206**。现在 HLS 下载链路不再锁定 HTTP/1.1。这同时解释了「同一部片子播放正常、下载 403」：播放链路没锁协议版本，所以一直是通的。
+  > ⚠️ 这条坑用 `curl --http1.1` 复现不出来（照样 200），必须用 OkHttp 本体测 —— 排查时别被 curl 误导。
+- 播放和下载统一按实际 CDN 域名补齐 Referer / Origin，覆盖子域名、下载探测、分片、直链及重定向请求。
+- 保留 NJAV 播放地址中的签名查询参数，重定向后的清单使用最终地址解析相对分片路径。
+- 新增签名地址和 CDN 请求头回归测试。
 
 ## 🤝 贡献说明
 

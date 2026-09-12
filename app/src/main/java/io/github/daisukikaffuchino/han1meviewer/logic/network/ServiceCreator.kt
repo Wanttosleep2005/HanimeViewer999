@@ -7,6 +7,7 @@ import io.github.daisukikaffuchino.han1meviewer.logic.network.interceptor.Getchu
 import io.github.daisukikaffuchino.han1meviewer.logic.network.interceptor.SpeedLimitInterceptor
 import io.github.daisukikaffuchino.han1meviewer.logic.network.interceptor.UrlLoggingInterceptor
 import io.github.daisukikaffuchino.han1meviewer.logic.network.interceptor.UserAgentInterceptor
+import io.github.daisukikaffuchino.han1meviewer.logic.njav.NjavPlaybackInterceptor
 import io.github.daisukikaffuchino.utils.applicationContext
 import io.github.daisukikaffuchino.utils.unsafeLazy
 import okhttp3.Cache
@@ -100,6 +101,7 @@ object ServiceCreator {
             .protocols(listOf(Protocol.HTTP_1_1))
             .addInterceptor(UserAgentInterceptor)
             .addInterceptor(downloadSpeedLimitInterceptor)
+            .addNetworkInterceptor(NjavPlaybackInterceptor())
             .proxySelector(HProxySelector())
             .proxyAuthenticator(HProxyAuthenticator.http)
             .dns(dns)

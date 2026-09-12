@@ -54,6 +54,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.Request
+import okhttp3.Protocol
 import okhttp3.Response
 import okhttp3.ResponseBody
 import okhttp3.internal.closeQuietly
@@ -209,18 +210,41 @@ class HanimeDownloadWorker(
     /**
      * 下载这些源时要带的请求头。
      *
-     * 目前只有 `surrit.com` 需要（不带 `Referer: https://njavtv.com/` 一律 403）。
+     * `surrit.com` / `fourhoi.com` 需要 `Referer: https://njavtv.com/`。
      * 对 hanime 的直链它返回空表，所以老路径一行行为都没变。
      * **分片请求也必须带** —— 防盗链是按域名判的，不是按主清单判的。
      */
     private val downloadHeaders: Map<String, String> get() = NjavNetwork.playbackHeadersFor(downloadUrl)
 
     /**
-     * HLS 专用 client：沿用下载 client（保留限速拦截器 / UA / DNS），
-     * 但把超时放宽 —— `downloadClient` 的 connect 5s 对这种一跳一跳的分片请求太紧。
+     * HLS 专用 client：沿用下载链路的限速 / UA / DNS / 代理，**但解除 HTTP/1.1 锁定**。
+     *
+     * ## 为什么必须放开 HTTP/2（mod 7.3 的 403 真凶）
+     *
+     * [`ServiceCreator.downloadClient`] 为了兼容 hanime 的直链 CDN，显式钉死了
+     * `protocols(listOf(Protocol.HTTP_1_1))`。而 `surrit.com`（Cloudflare）会**按
+     * HTTP 层指纹**拦请求：同一个 URL、同样的 UA / Referer / Origin，
+     * OkHttp 5.3.2 走 HTTP/1.1 一律 **403**，协商到 h2 就是 **200 / 206**。
+     *
+     * 实测矩阵（经 SOCKS5 代理、OkHttp 5.3.2）：
+     * ```
+     * [HTTP/1.1 only]    master  -> 403   segment -> 403
+     * [HTTP/2 + HTTP/1.1] master -> 200   segment -> 206
+     * ```
+     *
+     * ⚠️ **这条坑用 curl 复现不出来**：`curl --http1.1` 带上同样的头照样 200。
+     * 所以别再用 curl 验证「防盗链头对不对」就下结论 —— 必须用 OkHttp 本体测。
+     *
+     * 这也解释了那个最迷惑的现象：**同一部片子，播放正常、下载 403**。
+     * 播放走 [`io.github.daisukikaffuchino.han1meviewer.logic.njav.PlaybackHttpClient`]，
+     * 它没钉协议版本（默认 h2 优先）所以一直是通的；下载走的 client 钉了 HTTP/1.1。
+     *
+     * 之所以只在 HLS 链路上放开、而不是直接改 `downloadClient`：后者是 hanime
+     * 直链下载在用的，动它有回归风险。nJAV 的视频全是 HLS，改这里就够了。
      */
     private val hlsClient by lazy {
         ServiceCreator.downloadClient.newBuilder()
+            .protocols(listOf(Protocol.HTTP_2, Protocol.HTTP_1_1))
             .connectTimeout(15, TimeUnit.SECONDS)
             .readTimeout(30, TimeUnit.SECONDS)
             .proxySelector(HProxySelector())
@@ -772,18 +796,19 @@ class HanimeDownloadWorker(
     /** 解析出分片清单：`downloadUrl` 可能是主清单，也可能直接就是分片清单。 */
     private suspend fun resolveHlsMedia(): HlsPlaylist.Media {
         cachedHlsMedia?.let { return it }
-        val body = fetchHlsText(downloadUrl)
-        val media = if (HlsPlaylist.isMaster(body)) {
-            val variants = HlsPlaylist.parseMaster(downloadUrl, body)
+        val playlist = fetchHlsText(downloadUrl)
+        val media = if (HlsPlaylist.isMaster(playlist.body)) {
+            val variants = HlsPlaylist.parseMaster(playlist.url, playlist.body)
             val picked = pickHlsVariant(variants)
                 ?: throw IOException("HLS：主清单里没有可用清晰度")
             LogUtil.d(
                 TAG,
                 "HLS 主清单 ${variants.size} 档，选中 ${picked.height ?: "?"}P（BANDWIDTH=${picked.bandwidth}）"
             )
-            HlsPlaylist.parseMedia(picked.url, fetchHlsText(picked.url))
+            val selected = fetchHlsText(picked.url)
+            HlsPlaylist.parseMedia(selected.url, selected.body)
         } else {
-            HlsPlaylist.parseMedia(downloadUrl, body)
+            HlsPlaylist.parseMedia(playlist.url, playlist.body)
         }
         if (media.segments.isEmpty()) throw IOException("HLS：清单里没有分片")
         cachedHlsMedia = media
@@ -806,7 +831,16 @@ class HanimeDownloadWorker(
     /** 从 `720P` / `1080P` 里抠出高度。 */
     private val QUALITY_HEIGHT = Regex("""(\d{3,4})""")
 
-    private suspend fun fetchHlsText(url: String): String {
+    /**
+     * 拉一份清单文本，并**把最终地址一起带回来**。
+     *
+     * 为什么要带地址：清单里的分片常常是相对路径（`video0.jpeg`），必须相对
+     * **清单的最终地址**解析。如果 `downloadUrl` 发生过 301/302（nJAV 的 CDN
+     * 会跳到别的路径/主机），拿原始地址当基准就会解析到一个不存在的 URL 上。
+     */
+    private data class HlsText(val url: String, val body: String)
+
+    private suspend fun fetchHlsText(url: String): HlsText {
         val request = Request.Builder().url(url).get()
             .apply { downloadHeaders.forEach { (name, value) -> header(name, value) } }
             .build()
@@ -815,7 +849,8 @@ class HanimeDownloadWorker(
             if (!response.isSuccessful) {
                 throw HttpStatusException(response.code, "HTTP ${response.code}")
             }
-            return response.body.string()
+            // response.request 是**跟随重定向之后**真正发出请求的那个地址。
+            return HlsText(response.request.url.toString(), response.body.string())
         }
     }
 

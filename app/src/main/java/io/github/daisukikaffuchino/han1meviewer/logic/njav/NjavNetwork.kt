@@ -8,6 +8,7 @@ import io.github.daisukikaffuchino.han1meviewer.logic.network.interceptor.UserAg
 import io.github.daisukikaffuchino.han1meviewer.logic.network.interceptor.UrlLoggingInterceptor
 import io.github.daisukikaffuchino.utils.unsafeLazy
 import okhttp3.OkHttpClient
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import retrofit2.Retrofit
 import java.net.URLEncoder
 import java.util.concurrent.TimeUnit
@@ -85,7 +86,7 @@ object NjavNetwork {
         return BASE_URL + value.trimStart('/')
     }
 
-    /** 需要防盗链头的域名，与 [NjavPlaybackInterceptor] 的 `HEADER_HOSTS` 保持一致。 */
+    /** 播放与下载共用的防盗链域名，包含其子域名。 */
     private val PROTECTED_HOSTS = listOf("surrit.com", "fourhoi.com")
 
     /**
@@ -97,12 +98,14 @@ object NjavNetwork {
      * 判漏了就会在换域名时变成「清一色 403」——而 403 的表现恰好是
      * 「有地址、有分片数，但一个字节都下不来」。
      */
-    fun playbackHeadersFor(url: String): Map<String, String> =
-        if (PROTECTED_HOSTS.any { url.contains(it, ignoreCase = true) }) {
+    fun playbackHeadersFor(url: String): Map<String, String> {
+        val host = url.toHttpUrlOrNull()?.host ?: return emptyMap()
+        return if (PROTECTED_HOSTS.any { host == it || host.endsWith(".$it") }) {
             mapOf("Referer" to REFERER, "Origin" to ORIGIN)
         } else {
             emptyMap()
         }
+    }
 
     private val dns = HDns()
 

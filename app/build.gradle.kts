@@ -68,8 +68,8 @@ android {
         applicationId = "io.github.daisukikaffuchino.han1meviewer"
         minSdk = 29
         targetSdk = 37
-        versionCode = 260927
-        versionName = "26.3.2-mod.7.2"
+        versionCode = 260928
+        versionName = "26.3.2-mod.7.3"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -223,4 +223,5 @@ dependencies {
     coreLibraryDesugaring(libs.desugar.jdk.libs)
 
     androidTestImplementation(libs.test.junit)
+    testImplementation("junit:junit:4.13.2")
 }
