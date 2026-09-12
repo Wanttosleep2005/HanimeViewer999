@@ -1,8 +1,8 @@
 {
-  "versionName": "26.3.2-mod.6.8",
-  "versionCode": 260922,
-  "downloadUrl": "https://github.com/ddsmie4t2g/HanimeViewer/releases/download/v26.3.2-mod.6.8/Han1meViewer-v26.3.2-mod.6.8.apk",
-  "updateDescription": "1. 修好 nJAV 下载：以前点下载会报「无法获取文件大小或下载信息」。原因是 nJAV 给的是 HLS 清单（.m3u8），直接按普通文件下载只会得到一个几 KB 的文本。现在会解析清单、按分片下载并拼接成一个可直接播放的 .ts 文件，支持断点续传与单片重试。\n2. 修好中文字幕 / 无码分类页里「时长显示成中文字幕」：卡片上其实有两个角标，解析时取错了那个。现在按时长格式识别，不再认错。\n3. 修好详情页「播放量显示 null」：没有播放量数据时改为不显示，而不是印出 null。",
+  "versionName": "26.3.2-mod.6.9",
+  "versionCode": 260923,
+  "downloadUrl": "https://github.com/ddsmie4t2g/HanimeViewer/releases/download/v26.3.2-mod.6.9/Han1meViewer-v26.3.2-mod.6.9.apk",
+  "updateDescription": "1. 修好 nJAV 下载：以前点下载会报「无法获取文件大小或下载信息」。原因是 nJAV 给的是 HLS 清单（.m3u8），直接按普通文件下载只会得到一个几 KB 的文本。现在会解析清单、按分片下载并拼接成一个可直接播放的 .ts 文件，支持断点续传与单片重试。\n2. 修好中文字幕 / 无码分类页里「时长显示成中文字幕」：卡片上其实有两个角标，解析时取错了那个。现在按时长格式识别，不再认错。\n3. 修好详情页「播放量显示 null」：没有播放量数据时改为不显示，而不是印出 null。\n4. 下载进度百分比做了上限保护，不会再出现超过 100% 的情况。",
   "forceUpdate": false,
   "isShowAnnouncement": false,
   "announcement": ""

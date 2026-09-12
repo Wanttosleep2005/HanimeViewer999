@@ -90,10 +90,16 @@ data class HanimeDownloadEntity(
     val id: Int = 0,
 ) {
     /**
-     * 下载进度
+     * 下载进度。
+     *
+     * ⚠️ 必须 clamp：HLS 下载的 [length] 是**抽样估算**值（见
+     * `HanimeDownloadWorker.estimateHlsLength`），某个片子估算偏小就会让
+     * `downloadedLength / length` 超过 100%，界面上会出现「108%」、
+     * 进度条也会溢出（`item.progress / 100f` 直接喂给了
+     * `LinearProgressIndicator`，它的进度必须在 0f..1f）。
      */
     @get:IntRange(from = 0, to = 100)
-    val progress get() = (downloadedLength * 100 / length).toInt()
+    val progress get() = (downloadedLength * 100 / length).toInt().coerceIn(0, 100)
 
     val isDownloading get() = state == DownloadState.Downloading
 
