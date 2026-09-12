@@ -143,6 +143,9 @@ object DatabaseRepo {
 
         suspend fun deleteByKeyword(query: String) =
             searchHistoryDao.deleteByKeyword(query)
+
+        suspend fun clearAll() =
+            searchHistoryDao.deleteAll()
     }
 
     object HanimeAdvancedSearchRepo {

@@ -505,6 +505,14 @@
     <string name="progress_import_empty">這個檔案裡沒有觀看紀錄</string>
     <string name="progress_import_failed">匯入失敗</string>
     <string name="progress_import_confirm_message">應用裡已有的紀錄會保留。同一部影片取進度較大、觀看時間較新的那筆，所以現在正在看的進度不會被回溯。</string>
+    <string name="search_history_clear">清空</string>
+    <string name="search_history_pin_hint">長按某個搜尋詞可將它置頂</string>
+    <string name="playback_memory">記住每部影片的倍速與畫質</string>
+    <string name="playback_memory_summary">再次開啟同一部時，自動恢復上次使用的倍速與畫質</string>
+    <string name="playback_memory_clear">清除播放記憶</string>
+    <string name="playback_memory_clear_summary">忘掉按影片記的倍速/畫質，重新依全域預設</string>
+    <string name="playback_memory_cleared">播放記憶已清除</string>
+    <string name="playback_memory_count">已記住 %1$d 部影片</string>
     <string name="test_doh">測試 DoH</string>
     <string name="test_doh_summary">檢查目前 DoH 設定是否可以解析網域</string>
     <string name="doh_test_result">DoH 測試結果</string>

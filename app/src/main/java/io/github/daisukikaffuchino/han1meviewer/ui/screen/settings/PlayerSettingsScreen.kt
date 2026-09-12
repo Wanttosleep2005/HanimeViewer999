@@ -37,6 +37,9 @@ data class PlayerSettingsUiState(
     val longPressSpeedTimesLabel: String,
     val slideSensitivity: Int,
     val slideSensitivitySummary: String,
+    val rememberPerVideoPlayback: Boolean,
+    /** 已记住多少部影片，用于「清除播放记忆」的可用性与摘要。 */
+    val playbackMemoryCount: Int,
 )
 
 private enum class PlayerChoiceDialog {
@@ -58,6 +61,8 @@ fun PlayerSettingsScreen(
     onLongPressSpeedChange: (String) -> Unit,
     onSlideSensitivityChange: (Int) -> Unit,
     onOpenMpvSettings: () -> Unit,
+    onRememberPerVideoPlaybackChange: (Boolean) -> Unit = {},
+    onClearPlaybackMemory: () -> Unit = {},
 ) {
     var activeDialog by rememberSaveable { mutableStateOf<PlayerChoiceDialog?>(null) }
 
@@ -152,6 +157,30 @@ fun PlayerSettingsScreen(
             }
         }
 
+        segmentedSection(titleRes = R.string.playback_memory) {
+            segmentedGroup {
+                SettingSwitchItem(
+                    title = stringResource(R.string.playback_memory),
+                    summary = stringResource(R.string.playback_memory_summary),
+                    checked = state.rememberPerVideoPlayback,
+                    iconRes = R.drawable.ic_speed_flash,
+                    onCheckedChange = onRememberPerVideoPlaybackChange,
+                )
+                SettingNavigationItem(
+                    title = stringResource(R.string.playback_memory_clear),
+                    // 有条数时显示条数，比一句固定说明更有信息量。
+                    summary = if (state.playbackMemoryCount > 0) {
+                        stringResource(R.string.playback_memory_count, state.playbackMemoryCount)
+                    } else {
+                        stringResource(R.string.playback_memory_clear_summary)
+                    },
+                    iconRes = R.drawable.ic_clear_all,
+                    onClick = onClearPlaybackMemory,
+                    enabled = state.playbackMemoryCount > 0,
+                )
+            }
+        }
+
         segmentedSection(titleRes = R.string.player_settings_casting) {
             segmentedGroup {
                 SettingSwitchItem(
@@ -198,6 +227,8 @@ private fun PlayerSettingsScreenPreview() {
                     R.string.current_slide_sensitivity,
                     stringResource(R.string.moderate)
                 ),
+                rememberPerVideoPlayback = true,
+                playbackMemoryCount = 12,
             ),
             kernelOptions = listOf(
                 "MediaPlayer" to "MediaPlayer",

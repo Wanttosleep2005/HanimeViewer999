@@ -513,6 +513,14 @@ Recommendations are as follows:\n
     <string name="progress_import_empty">No watch history in this file</string>
     <string name="progress_import_failed">Import failed</string>
     <string name="progress_import_confirm_message">Records already in the app are kept. For the same title the larger progress and the newer watch time win, so nothing you are watching now gets rolled back.</string>
+    <string name="search_history_clear">Clear all</string>
+    <string name="search_history_pin_hint">Long-press a keyword to pin it to the top</string>
+    <string name="playback_memory">Remember speed &amp; quality per title</string>
+    <string name="playback_memory_summary">Reopening a title restores the speed and quality you last used on it</string>
+    <string name="playback_memory_clear">Clear playback memory</string>
+    <string name="playback_memory_clear_summary">Forget per-title speed/quality; global defaults apply again</string>
+    <string name="playback_memory_cleared">Playback memory cleared</string>
+    <string name="playback_memory_count">Remembered for %1$d titles</string>
     <string name="test_doh">Test DoH</string>
     <string name="test_doh_summary">Check whether current DoH settings can resolve the domain</string>
     <string name="doh_test_result">DoH Test Result</string>

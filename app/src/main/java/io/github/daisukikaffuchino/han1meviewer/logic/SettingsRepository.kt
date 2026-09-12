@@ -83,6 +83,12 @@ object SettingsRepository : SettingsStore {
     val appendCustomMirrorPath get() = current.appendCustomMirrorPath
     /** 用户自建镜像池（JSON）。内置镜像不在这里，见 [io.github.daisukikaffuchino.han1meviewer.logic.network.MirrorStore]。 */
     val extraMirrorsJson get() = current.extraMirrorsJson
+    /** 置顶搜索词（JSON）。 */
+    val pinnedSearchesJson get() = current.pinnedSearchesJson
+    /** 是否按影片记住倍速与画质。 */
+    val rememberPerVideoPlayback get() = current.rememberPerVideoPlayback
+    /** 按影片的播放记忆（JSON）。 */
+    val perVideoPlaybackJson get() = current.perVideoPlaybackJson
     val selectedBaseUrl get() = current.selectedBaseUrl
     val useBuiltInHosts get() = current.useBuiltInHosts
     val customHostsData get() = current.customHostsData

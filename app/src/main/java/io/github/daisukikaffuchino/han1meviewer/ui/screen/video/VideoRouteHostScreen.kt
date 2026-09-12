@@ -52,6 +52,7 @@ import io.github.daisukikaffuchino.han1meviewer.logic.SettingsRepository
 import io.github.daisukikaffuchino.han1meviewer.R
 import io.github.daisukikaffuchino.han1meviewer.getHanimeVideoLink
 import io.github.daisukikaffuchino.han1meviewer.logic.DatabaseRepo
+import io.github.daisukikaffuchino.han1meviewer.logic.PlaybackMemory
 import io.github.daisukikaffuchino.han1meviewer.logic.entity.HKeyframeEntity
 import io.github.daisukikaffuchino.han1meviewer.logic.entity.WatchHistoryEntity
 import io.github.daisukikaffuchino.han1meviewer.logic.exception.ParseException
@@ -122,7 +123,10 @@ fun VideoRouteHostScreen(
     }
 
     LaunchedEffect(playbackController) {
-        playbackController.setPlaybackSpeed(SettingsRepository.playerSpeed)
+        // 这部片记过倍速就用记过的，否则回落到全局默认。
+        playbackController.setPlaybackSpeed(
+            PlaybackMemory.speedFor(route.videoCode) ?: SettingsRepository.playerSpeed
+        )
     }
     LaunchedEffect(isLargeScreenDevice) {
         val currentSettings = SettingsRepository.current
@@ -489,7 +493,8 @@ fun VideoRouteHostScreen(
                             val request = PendingPlayback(
                                 title = info.title,
                                 qualities = qualities,
-                                preferredQuality = SettingsRepository.videoQuality,
+                                preferredQuality = PlaybackMemory.qualityFor(route.videoCode)
+                                    ?: SettingsRepository.videoQuality,
                                 artworkUri = info.coverUrl,
                                 startPositionMs = history?.progress ?: 0L,
                             )
@@ -698,7 +703,8 @@ fun VideoRouteHostScreen(
                 playbackController.load(
                     title = info.title,
                     qualities = qualities,
-                    preferredQuality = SettingsRepository.videoQuality,
+                    preferredQuality = PlaybackMemory.qualityFor(route.videoCode)
+                        ?: SettingsRepository.videoQuality,
                     artworkUri = info.coverUrl,
                 )
             }
@@ -711,9 +717,19 @@ fun VideoRouteHostScreen(
         selectedQuality = playbackState.qualities
             .getOrNull(playbackState.selectedQualityIndex)
             ?.label,
-        onQualitySelected = playbackController::selectQuality,
+        onQualitySelected = { index ->
+            playbackController.selectQuality(index)
+            // 记下这次的选择，下次打开这部直接用它。手动挑的画质一律记账，
+            // 包括「从记忆值改回默认」——否则用户改了却不生效，会以为记忆坏了。
+            playbackState.qualities.getOrNull(index)?.label?.let { label ->
+                scope.launch { PlaybackMemory.rememberQuality(route.videoCode, label) }
+            }
+        },
         playbackSpeed = playbackState.engine.playbackSpeed,
-        onPlaybackSpeedSelected = playbackController::setPlaybackSpeed,
+        onPlaybackSpeedSelected = { speed ->
+            playbackController.setPlaybackSpeed(speed)
+            scope.launch { PlaybackMemory.rememberSpeed(route.videoCode, speed) }
+        },
         superResolutionLabel = stringResource(R.string.player_anime4k_label),
         superResolutionOptions = if (kernel == PlayerKernel.MpvPlayer && !playbackState.engine.isCasting) {
             listOf(

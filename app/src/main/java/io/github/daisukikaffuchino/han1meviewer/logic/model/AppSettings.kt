@@ -163,6 +163,13 @@ data class AppSettings(
      * 所以删光这一项也不会让用户失去入口。
      */
     val extraMirrorsJson: String = "",
+    /**
+     * 置顶的搜索词（JSON 数组）。置顶的排在搜索结果页历史列表最前，且不会被自动裁剪。
+     *
+     * 放在设置里而不是新开一张表：置顶只是一个「顺序」问题，为它加一列就要写一次
+     * Room 迁移，收益不匹配。
+     */
+    val pinnedSearchesJson: String = "",
     val useBuiltInHosts: Boolean = false,
     val customHostsData: String = "",
     /**
@@ -268,6 +275,16 @@ data class AppSettings(
     val videoQuality: String = "1080P",
     val showPlayedIndicator: Boolean = true,
     val allowResumePlayback: Boolean = true,
+    /**
+     * 是否**按影片**记住倍速与画质。
+     *
+     * 开启后，在一部影片里调过的倍速/画质会跟着这部影片存下来，下次打开这部自动恢复；
+     * 没调过的仍走 [playerSpeed] / [videoQuality] 这两个全局默认值。
+     * 默认开启 —— 「上次用 1.5 倍看完的番，下次打开又变回 1.0」是明显的倒退。
+     */
+    val rememberPerVideoPlayback: Boolean = true,
+    /** 按影片的播放记忆（JSON），由 [io.github.daisukikaffuchino.han1meviewer.logic.PlaybackMemory] 读写。 */
+    val perVideoPlaybackJson: String = "",
     val whenCountdownRemindSeconds: Int = 10,
     val showCommentWhenCountdown: Boolean = false,
     val hKeyframesEnable: Boolean = true,

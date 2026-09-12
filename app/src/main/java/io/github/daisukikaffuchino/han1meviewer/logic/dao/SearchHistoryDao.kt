@@ -31,6 +31,9 @@ abstract class SearchHistoryDao {
     @Query("DELETE FROM SearchHistoryEntity WHERE (`query` = :query)")
     abstract suspend fun deleteByKeyword(query: String)
 
+    @Query("DELETE FROM SearchHistoryEntity")
+    abstract suspend fun deleteAll()
+
     @Transaction
     open suspend fun insertOrUpdate(entity: SearchHistoryEntity) {
         val dbEntity = find(entity.query)

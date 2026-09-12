@@ -9,6 +9,7 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -86,6 +87,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.daisukikaffuchino.han1meviewer.R
 import io.github.daisukikaffuchino.han1meviewer.logic.SettingsRepository
+import io.github.daisukikaffuchino.han1meviewer.logic.SearchHistoryManager
 import io.github.daisukikaffuchino.han1meviewer.logic.entity.SearchHistoryEntity
 import io.github.daisukikaffuchino.han1meviewer.logic.model.HanimeInfo
 import io.github.daisukikaffuchino.han1meviewer.logic.model.HanimeInfo.Companion.NORMAL
@@ -131,6 +133,22 @@ fun SearchScreen(
 
     var searchQuery by rememberSaveable(initialQuery) { mutableStateOf(initialQuery ?: "") }
     var histories by remember { mutableStateOf<List<SearchHistoryEntity>>(emptyList()) }
+    /**
+     * 置顶顺序存在设置里而不是数据库，切换置顶不会让 [histories] 这个 Flow 重新发射，
+     * 所以用手动版本号触发重排。
+     */
+    var pinVersion by remember { mutableIntStateOf(0) }
+    val pinnedQueries = remember(pinVersion) { SearchHistoryManager.pinned().map { it.lowercase() }.toSet() }
+    // 置顶的排最前，其余保持「最近搜过的在前」。
+    val displayHistories = remember(histories, pinnedQueries) {
+        if (pinnedQueries.isEmpty()) {
+            histories
+        } else {
+            val pinned = histories.filter { it.query.lowercase() in pinnedQueries }
+            val rest = histories.filterNot { it.query.lowercase() in pinnedQueries }
+            pinned + rest
+        }
+    }
     var hasSearched by rememberSaveable(initialQuery) { mutableStateOf(false) }
     var isRefreshing by remember { mutableStateOf(false) }
     var isSearchFocused by remember { mutableStateOf(false) }
@@ -223,6 +241,8 @@ fun SearchScreen(
             focusMgr.clearFocus()
             kb?.hide()
             viewModel.insertSearchHistory(SearchHistoryEntity(query = query))
+            // 历史不设上限会越攒越长；写入后顺手裁掉最旧的（置顶的不裁）。
+            scope.launch { SearchHistoryManager.prune() }
             doSearch()
         }
     }
@@ -343,6 +363,7 @@ fun SearchScreen(
                     viewModel.insertSearchHistory(
                         SearchHistoryEntity(query = q)
                     )
+                    scope.launch { SearchHistoryManager.prune() }
                 }
                 doSearch(resetScroll = true)
             }
@@ -418,14 +439,38 @@ fun SearchScreen(
             } else if (searchQuery.isBlank() && histories.isNotEmpty()) {
                 // 未搜索 + 搜索框为空 → 显示历史
                 Column(Modifier.fillMaxSize()) {
-                    Text(
-                        stringResource(R.string.recent_searches),
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
-                    )
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(start = 16.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            stringResource(R.string.recent_searches),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.weight(1f)
+                        )
+                        IconButton(
+                            onClick = {
+                                scope.launch {
+                                    SearchHistoryManager.clearAll()
+                                    histories = emptyList()
+                                    pinVersion++
+                                }
+                            },
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Icon(
+                                painter = painterResource(R.drawable.ic_clear_all),
+                                contentDescription = stringResource(R.string.search_history_clear),
+                                modifier = Modifier.size(18.dp),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
                     SearchHistoryList(
-                        histories,
+                        displayHistories,
                         { query ->
                             searchQuery = query; hasSearched = true; viewModel.query =
                             query; focusMgr.clearFocus(); kb?.hide(); viewModel.insertSearchHistory(
@@ -435,6 +480,13 @@ fun SearchScreen(
                         { h ->
                             viewModel.deleteSearchHistory(h); histories =
                             histories.filter { it.id != h.id }
+                        },
+                        pinnedQueries = pinnedQueries,
+                        onTogglePin = { query ->
+                            scope.launch {
+                                SearchHistoryManager.togglePin(query)
+                                pinVersion++
+                            }
                         })
                 }
             }
@@ -555,6 +607,8 @@ fun SearchHistoryList(
     histories: List<SearchHistoryEntity>,
     onHistoryClick: (String) -> Unit,
     onDeleteHistory: (SearchHistoryEntity) -> Unit,
+    pinnedQueries: Set<String> = emptySet(),
+    onTogglePin: (String) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     AnimatedVisibility(
@@ -568,18 +622,30 @@ fun SearchHistoryList(
                 )
         ) {
             histories.forEach { h ->
+                val isPinned = h.query.lowercase() in pinnedQueries
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clickable { onHistoryClick(h.query) }
+                        // 长按置顶 / 取消置顶。放在长按而不是再加一个按钮：
+                        // 这一行已经很窄，多一个图标会把搜索词挤掉。
+                        .combinedClickable(
+                            onClick = { onHistoryClick(h.query) },
+                            onLongClick = { onTogglePin(h.query) },
+                        )
                         .padding(horizontal = 16.dp, vertical = 10.dp)
                 ) {
                     Icon(
-                        painter = painterResource(R.drawable.ic_search),
+                        painter = painterResource(
+                            if (isPinned) R.drawable.ic_push_pin else R.drawable.ic_search
+                        ),
                         null,
                         Modifier.size(18.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        tint = if (isPinned) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        }
                     )
                     Spacer(Modifier.width(12.dp))
                     Text(

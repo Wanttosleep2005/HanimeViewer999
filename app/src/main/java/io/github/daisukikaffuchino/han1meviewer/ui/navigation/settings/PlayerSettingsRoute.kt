@@ -11,11 +11,13 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.google.android.gms.common.ConnectionResult
 import com.google.android.gms.common.GoogleApiAvailability
 import io.github.daisukikaffuchino.han1meviewer.logic.SettingsRepository
+import io.github.daisukikaffuchino.han1meviewer.logic.PlaybackMemory
 import io.github.daisukikaffuchino.han1meviewer.R
 import io.github.daisukikaffuchino.han1meviewer.ui.player.PlayerDefaults
 import io.github.daisukikaffuchino.han1meviewer.ui.player.PlayerKernel
 import io.github.daisukikaffuchino.han1meviewer.ui.screen.settings.PlayerSettingsScreen
 import io.github.daisukikaffuchino.han1meviewer.ui.screen.settings.PlayerSettingsUiState
+import io.github.daisukikaffuchino.utils.SonnerToast
 import kotlinx.coroutines.launch
 
 @Composable
@@ -67,6 +69,17 @@ fun PlayerSettingsRouteScreen(
             coroutineScope.launch { SettingsRepository.setSlideSensitivity(it) }
         },
         onOpenMpvSettings = onNavigateToMpvSettings,
+        onRememberPerVideoPlaybackChange = {
+            coroutineScope.launch {
+                SettingsRepository.update { settings -> settings.copy(rememberPerVideoPlayback = it) }
+            }
+        },
+        onClearPlaybackMemory = {
+            coroutineScope.launch {
+                PlaybackMemory.clear()
+                SonnerToast.success(R.string.playback_memory_cleared)
+            }
+        },
     )
 }
 
@@ -101,5 +114,7 @@ private fun buildPlayerSettingsUiState(context: Context): PlayerSettingsUiState 
         longPressSpeedTimesLabel = longPressDisplay,
         slideSensitivity = SettingsRepository.slideSensitivity,
         slideSensitivitySummary = toPrettySensitivityString(context, SettingsRepository.slideSensitivity),
+        rememberPerVideoPlayback = SettingsRepository.rememberPerVideoPlayback,
+        playbackMemoryCount = PlaybackMemory.size,
     )
 }
