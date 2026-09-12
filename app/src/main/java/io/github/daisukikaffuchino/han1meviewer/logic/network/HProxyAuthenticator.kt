@@ -62,16 +62,47 @@ object HProxyAuthenticator {
      * SOCKS5 的用户名/密码（RFC 1929）。
      *
      * `SocksSocketImpl` 在代理要求认证时会调用 `Authenticator.requestPasswordAuthentication`，
-     * 所以这里只能设**全局**默认实现。App 是单进程，且我们只对 `PROXY` 类型的请求应答，
-     * 副作用可控。
+     * 所以这里只能设**全局**默认实现。App 是单进程，且我们只对「发给自己配的那个代理」的
+     * 请求应答，副作用可控。
      */
     private val socks = object : java.net.Authenticator() {
         override fun getPasswordAuthentication(): PasswordAuthentication? {
-            if (requestorType != RequestorType.PROXY) return null
             val username = SettingsRepository.proxyUsername
             if (username.isBlank()) return null
+            // getRequestingHost()/getRequestingPort() 是 Java 侧的 protected 方法，
+            // **只能在子类内部调用** —— 挪到外面的普通函数里会直接编译不过。
+            if (!isOurProxyRequest(getRequestingHost(), getRequestingPort())) return null
             return PasswordAuthentication(username, SettingsRepository.proxyPassword.toCharArray())
         }
+    }
+
+    /**
+     * 这个认证请求是不是「发给我们自己配置的那个代理」的。
+     *
+     * ⭐ **绝对不要用 `requestorType` 来判断。**
+     * 直觉上应该写 `if (requestorType != RequestorType.PROXY) return null`，
+     * 但实测（JDK 21，SOCKS5 路径）：`getPasswordAuthentication()` 里
+     * `requestorType` **恒为 `SERVER`**，永远不会是 `PROXY` —— 那个守卫会
+     * **每次命中、永远返回 null，把 SOCKS5 认证彻底废掉**。
+     *
+     * 更阴的是失败姿势：`getPasswordAuthentication()` 返回 null 之后，
+     * `SocksSocketImpl` **不会**退回匿名，而是拿**系统用户名**（桌面端实测是
+     * `user.name`，密码为空）去发起 RFC 1929 协商。服务端看到的是「有凭据、
+     * 但不匹配」，于是回认证失败 —— 日志里表现为
+     * **每次连接都 auth failure，客户端侧只看到「网络错误」**，
+     * 完全看不出是凭据根本没发出去。
+     *
+     * 可用的判据是 `requestingHost` / `requestingPort`（实测这两个有值，
+     * 分别等于代理的 host 与 port）。两者都拿不到时**放行**——宁可发凭据，
+     * 也别再让一个「守卫」把整个功能静默干掉。
+     */
+    private fun isOurProxyRequest(host: String?, port: Int): Boolean {
+        val h = host.orEmpty()
+        if (h.isEmpty() && port <= 0) {
+            LogUtil.w(TAG, "SOCKS5 认证请求缺少 host/port，无法比对，按代理请求处理")
+            return true
+        }
+        return h == SettingsRepository.proxyIp || port == SettingsRepository.proxyPort
     }
 
     /**
