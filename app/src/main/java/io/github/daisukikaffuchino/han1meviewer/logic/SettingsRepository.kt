@@ -81,6 +81,8 @@ object SettingsRepository : SettingsStore {
     val isNjavSite get() = current.siteSource.isNjav
     val customMirrorSite get() = current.customMirrorSite
     val appendCustomMirrorPath get() = current.appendCustomMirrorPath
+    /** 用户自建镜像池（JSON）。内置镜像不在这里，见 [io.github.daisukikaffuchino.han1meviewer.logic.network.MirrorStore]。 */
+    val extraMirrorsJson get() = current.extraMirrorsJson
     val selectedBaseUrl get() = current.selectedBaseUrl
     val useBuiltInHosts get() = current.useBuiltInHosts
     val customHostsData get() = current.customHostsData

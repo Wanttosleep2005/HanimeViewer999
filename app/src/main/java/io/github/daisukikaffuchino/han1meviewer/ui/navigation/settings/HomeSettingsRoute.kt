@@ -51,6 +51,7 @@ import io.github.daisukikaffuchino.han1meviewer.R
 import io.github.daisukikaffuchino.han1meviewer.logic.AppUpdateCheckResult
 import io.github.daisukikaffuchino.han1meviewer.logic.AppUpdateChecker
 import io.github.daisukikaffuchino.han1meviewer.logic.BackupManager
+import io.github.daisukikaffuchino.han1meviewer.logic.ProgressMigration
 import io.github.daisukikaffuchino.han1meviewer.logic.LocalListRepository
 import io.github.daisukikaffuchino.han1meviewer.logic.OnlineListsBackup
 import io.github.daisukikaffuchino.han1meviewer.logic.model.AppLanguage
@@ -105,6 +106,7 @@ fun HomeSettingsRouteScreen(
     var showLauncherPicker by remember { mutableStateOf(false) }
     var showApplyDeepLinksDialog by remember { mutableStateOf(false) }
     var pendingImportUri by remember { mutableStateOf<android.net.Uri?>(null) }
+    var pendingProgressImportUri by remember { mutableStateOf<android.net.Uri?>(null) }
 
     // ---- 「关于」页的手动检查更新 ------------------------------------------
     // 检查结果与下载状态分开存：检查是**事件型**（跑一次给一个结果），
@@ -145,6 +147,21 @@ fun HomeSettingsRouteScreen(
         ActivityResultContracts.OpenDocument()
     ) { uri ->
         pendingImportUri = uri
+    }
+    val progressExportLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/json")
+    ) { uri ->
+        uri ?: return@rememberLauncherForActivityResult
+        coroutineScope.launch(Dispatchers.IO) {
+            runCatching { ProgressMigration.exportWatchHistory(context, uri) }
+                .onSuccess { withContext(Dispatchers.Main) { SonnerToast.success(R.string.progress_export_success) } }
+                .onFailure { withContext(Dispatchers.Main) { SonnerToast.error(R.string.progress_export_failed) } }
+        }
+    }
+    val progressImportLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        pendingProgressImportUri = uri
     }
     val localListsExportLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/json")
@@ -453,6 +470,12 @@ fun HomeSettingsRouteScreen(
         onImportBackup = {
             importLauncher.launch(arrayOf("application/json", "text/*", "*/*"))
         },
+        onExportWatchProgress = {
+            progressExportLauncher.launch("Han1meViewer-progress-${System.currentTimeMillis()}.json")
+        },
+        onImportWatchProgress = {
+            progressImportLauncher.launch(arrayOf("application/json", "text/*", "*/*"))
+        },
         onExportLocalLists = {
             localListsExportLauncher.launch(
                 "Han1meViewer-local-lists-${System.currentTimeMillis()}.json"
@@ -569,6 +592,37 @@ fun HomeSettingsRouteScreen(
             }
         },
         onDismiss = { pendingImportUri = null },
+    )
+
+    ConfirmDialog(
+        visible = pendingProgressImportUri != null,
+        title = stringResource(R.string.progress_import_title),
+        message = stringResource(R.string.progress_import_confirm_message),
+        confirmText = stringResource(R.string.confirm),
+        dismissText = stringResource(R.string.cancel),
+        onConfirm = {
+            val uri = pendingProgressImportUri ?: return@ConfirmDialog
+            pendingProgressImportUri = null
+            coroutineScope.launch(Dispatchers.IO) {
+                val result = runCatching { ProgressMigration.importWatchHistoryMerge(context, uri) }
+                withContext(Dispatchers.Main) {
+                    result
+                        .onSuccess { merged ->
+                            if (merged.total == 0) {
+                                SonnerToast.warning(R.string.progress_import_empty)
+                            } else {
+                                SonnerToast.success(
+                                    R.string.progress_import_success,
+                                    merged.updated,
+                                    merged.added,
+                                )
+                            }
+                        }
+                        .onFailure { SonnerToast.error(R.string.progress_import_failed) }
+                }
+            }
+        },
+        onDismiss = { pendingProgressImportUri = null },
     )
 
     ConfirmDialog(

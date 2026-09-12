@@ -151,6 +151,11 @@ fun NetworkSettingsScreen(
     relayNodeUi: RelayNodeUiState = RelayNodeUiState(),
     relayNodeActions: RelayNodeActions = RelayNodeActions(),
     onOpenRelayNodes: () -> Unit = {},
+    /** 镜像池。 */
+    showMirrorPool: Boolean = false,
+    mirrorUi: MirrorUiState = MirrorUiState(),
+    mirrorActions: MirrorActions = MirrorActions(),
+    onOpenMirrorPool: () -> Unit = {},
     embedded: Boolean = false,
 ) {
     var showDomainDialog by rememberSaveable { mutableStateOf(false) }
@@ -278,6 +283,13 @@ fun NetworkSettingsScreen(
         )
     }
 
+    if (showMirrorPool) {
+        MirrorPoolDialog(
+            state = mirrorUi,
+            actions = mirrorActions,
+        )
+    }
+
     val content: @Composable () -> Unit = {
         Column(modifier = Modifier.fillMaxWidth()) {
             if (embedded) {
@@ -304,6 +316,12 @@ fun NetworkSettingsScreen(
                     summary = if (useCustomMirrorSite && customMirrorSite.isNotBlank()) customMirrorSite else stringResource(R.string.custom_mirror_site_hint),
                     iconRes = R.drawable.ic_domain,
                     onClick = { showCustomMirrorSiteDialog = true },
+                )
+                SettingNavigationItem(
+                    title = stringResource(R.string.mirror_pool),
+                    summary = stringResource(R.string.mirror_pool_summary),
+                    iconRes = R.drawable.ic_dns,
+                    onClick = onOpenMirrorPool,
                 )
                 SettingNavigationItem(
                     title = stringResource(R.string.proxy),

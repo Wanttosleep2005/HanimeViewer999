@@ -23,6 +23,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.daisukikaffuchino.han1meviewer.EMPTY_STRING
 import io.github.daisukikaffuchino.han1meviewer.HanimeConstants
 import io.github.daisukikaffuchino.han1meviewer.logic.SettingsRepository
+import io.github.daisukikaffuchino.han1meviewer.logic.model.MirrorNode
+import io.github.daisukikaffuchino.han1meviewer.logic.model.MirrorValidation
 import io.github.daisukikaffuchino.han1meviewer.logic.model.RelayNodeValidation
 import io.github.daisukikaffuchino.han1meviewer.logic.model.SiteSource
 import io.github.daisukikaffuchino.han1meviewer.R
@@ -33,6 +35,7 @@ import io.github.daisukikaffuchino.han1meviewer.logic.network.HDns
 import io.github.daisukikaffuchino.han1meviewer.logic.network.HProxySelector
 import io.github.daisukikaffuchino.han1meviewer.logic.network.HanimeNetwork
 import io.github.daisukikaffuchino.han1meviewer.logic.network.NetworkDiagnostics
+import io.github.daisukikaffuchino.han1meviewer.logic.network.MirrorStore
 import io.github.daisukikaffuchino.han1meviewer.logic.network.RelayNodeStore
 import io.github.daisukikaffuchino.han1meviewer.logic.network.ServiceCreator
 import io.github.daisukikaffuchino.han1meviewer.logic.state.WebsiteState
@@ -40,6 +43,8 @@ import io.github.daisukikaffuchino.han1meviewer.logout
 import io.github.daisukikaffuchino.han1meviewer.ui.component.ConfirmDialog
 import io.github.daisukikaffuchino.han1meviewer.ui.screen.settings.DelayResultUi
 import io.github.daisukikaffuchino.han1meviewer.ui.screen.settings.DohTestResultUi
+import io.github.daisukikaffuchino.han1meviewer.ui.screen.settings.MirrorActions
+import io.github.daisukikaffuchino.han1meviewer.ui.screen.settings.MirrorUiState
 import io.github.daisukikaffuchino.han1meviewer.ui.screen.settings.NetworkSettingsScreen
 import io.github.daisukikaffuchino.han1meviewer.ui.screen.settings.NetworkSettingsUiState
 import io.github.daisukikaffuchino.han1meviewer.ui.screen.settings.RelayNodeActions
@@ -76,6 +81,11 @@ fun NetworkSettingsRouteScreen(embedded: Boolean = false) {
     var isRelayNodeTesting by remember { mutableStateOf(false) }
     var relayNodeVersion by remember { mutableIntStateOf(0) }
     var lastNodeValidation by remember { mutableStateOf<RelayNodeValidation?>(null) }
+    // ── 镜像池 ──────────────────────────────────────────────────
+    var showMirrorPool by remember { mutableStateOf(false) }
+    var isMirrorTesting by remember { mutableStateOf(false) }
+    var mirrorVersion by remember { mutableIntStateOf(0) }
+    var lastMirrorValidation by remember { mutableStateOf<MirrorValidation?>(null) }
     var showDomainRestartConfirm by remember { mutableStateOf(false) }
     var showHostsRestartConfirm by remember { mutableStateOf(false) }
     var showCustomHostsValidationError by remember { mutableStateOf<List<String>?>(null) }
@@ -277,6 +287,95 @@ fun NetworkSettingsRouteScreen(embedded: Boolean = false) {
         },
     )
 
+    /**
+     * 镜像池的 UI 状态。
+     *
+     * 与节点池同理：[MirrorStore] 是 object 而非 Flow，靠 [mirrorVersion] 手动触发重算。
+     */
+    val mirrorUi = remember(settings, mirrorVersion, isMirrorTesting, lastMirrorValidation) {
+        MirrorUiState(
+            mirrors = MirrorStore.allMirrors(),
+            probes = MirrorStore.allProbes(),
+            activeMirrorId = MirrorStore.activeMirrorId(),
+            defaultMirrorId = MirrorStore.defaultMirrorId,
+            testing = isMirrorTesting,
+            lastValidation = lastMirrorValidation,
+        )
+    }
+
+    // 把「切到某个镜像」落成一次待确认的域名切换，复用既有的重启流程：
+    // 内置镜像直接进重启确认；自建镜像先过一遍「自定义镜像」警告。
+    fun stageMirrorSwitch(node: MirrorNode) {
+        pendingDomainValue = node.url
+        pendingSiteSource = HanimeConstants.siteSourceOf(node.url)
+        pendingSiteSourceSwitch = false
+        if (node.builtIn) {
+            pendingUseCustomMirrorSite = false
+            pendingCustomMirrorSite = SettingsRepository.customMirrorSite
+            pendingAppendCustomMirrorPath = SettingsRepository.appendCustomMirrorPath
+            showDomainRestartConfirm = true
+        } else {
+            pendingUseCustomMirrorSite = true
+            pendingCustomMirrorSite = node.url
+            pendingAppendCustomMirrorPath = false
+            showCustomMirrorWarningConfirm = true
+        }
+    }
+
+    val mirrorActions = MirrorActions(
+        onTest = {
+            if (!isMirrorTesting) {
+                isMirrorTesting = true
+                coroutineScope.launch {
+                    runCatching { MirrorStore.probeAll() }
+                        .onFailure { LogUtil.w("NET_DIAG", "镜像测速失败：${it.message}") }
+                    isMirrorTesting = false
+                    mirrorVersion++
+                }
+            }
+        },
+        onUseFastest = {
+            val fastest = MirrorStore.fastest()
+            if (fastest == null) {
+                SonnerToast.warning(R.string.mirror_no_fastest)
+            } else {
+                showMirrorPool = false
+                stageMirrorSwitch(fastest)
+            }
+        },
+        onSelect = { id ->
+            MirrorStore.allMirrors().firstOrNull { it.id == id }?.let { node ->
+                showMirrorPool = false
+                stageMirrorSwitch(node)
+            }
+        },
+        onAdd = { url, label ->
+            coroutineScope.launch {
+                val result = MirrorStore.addMirror(url, label)
+                lastMirrorValidation = result
+                if (result == MirrorValidation.Ok) SonnerToast.success(R.string.mirror_added)
+                mirrorVersion++
+            }
+        },
+        onRemove = { id ->
+            coroutineScope.launch {
+                val wasActive = MirrorStore.removeMirror(id)
+                if (wasActive) {
+                    SonnerToast.warning(R.string.mirror_removed_active)
+                    showMirrorPool = false
+                    showDomainRestartConfirm = true
+                } else {
+                    SonnerToast.success(R.string.mirror_removed)
+                }
+                mirrorVersion++
+            }
+        },
+        onDismiss = {
+            showMirrorPool = false
+            lastMirrorValidation = null
+        },
+    )
+
     NetworkSettingsScreen(
         state = uiState,
         domainOptions = buildDomainOptions(context),
@@ -444,6 +543,23 @@ fun NetworkSettingsRouteScreen(embedded: Boolean = false) {
         showRelayNodes = showRelayNodes,
         relayNodeUi = relayNodeUi,
         relayNodeActions = relayNodeActions,
+        showMirrorPool = showMirrorPool,
+        mirrorUi = mirrorUi,
+        mirrorActions = mirrorActions,
+        onOpenMirrorPool = {
+            showMirrorPool = true
+            lastMirrorValidation = null
+            // 打开就顺手测一次，别让面板先显示一排「未测速」。
+            if (MirrorStore.allProbes().isEmpty() && !isMirrorTesting) {
+                isMirrorTesting = true
+                coroutineScope.launch {
+                    runCatching { MirrorStore.probeAll() }
+                        .onFailure { LogUtil.w("NET_DIAG", "镜像测速失败：${it.message}") }
+                    isMirrorTesting = false
+                    mirrorVersion++
+                }
+            }
+        },
         onOpenRelayNodes = {
             showRelayNodes = true
             lastNodeValidation = null

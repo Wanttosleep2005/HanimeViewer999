@@ -153,6 +153,16 @@ data class AppSettings(
     val useCustomMirrorSite: Boolean = false,
     val customMirrorSite: String = "",
     val appendCustomMirrorPath: Boolean = true,
+    /**
+     * 用户自建的镜像列表（JSON 数组），由
+     * [io.github.daisukikaffuchino.han1meviewer.logic.network.MirrorStore] 读写。
+     *
+     * 与 [domainName] / [customMirrorSite] 的分工：那两个是**当前生效**的入口，
+     * 这里是**候选池**。池子里的内置四项（三个 hanime 镜像 + nJAV）不落库，
+     * 始终由 [io.github.daisukikaffuchino.han1meviewer.HanimeConstants] 提供，
+     * 所以删光这一项也不会让用户失去入口。
+     */
+    val extraMirrorsJson: String = "",
     val useBuiltInHosts: Boolean = false,
     val customHostsData: String = "",
     /**

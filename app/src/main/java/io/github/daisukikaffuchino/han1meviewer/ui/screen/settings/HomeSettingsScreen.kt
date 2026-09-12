@@ -100,6 +100,8 @@ fun HomeSettingsScreen(
     onClearCache: () -> Unit,
     onExportBackup: () -> Unit,
     onImportBackup: () -> Unit,
+    onExportWatchProgress: () -> Unit,
+    onImportWatchProgress: () -> Unit,
     onExportLocalLists: () -> Unit,
     onImportLocalLists: () -> Unit,
     onExportOnlineLists: () -> Unit,
@@ -474,6 +476,18 @@ fun HomeSettingsScreen(
                             iconRes = R.drawable.ic_download,
                             onClick = onImportBackup,
                         )
+                        SettingNavigationItem(
+                            title = stringResource(R.string.progress_export_title),
+                            summary = stringResource(R.string.progress_export_summary),
+                            iconRes = R.drawable.ic_export,
+                            onClick = onExportWatchProgress,
+                        )
+                        SettingNavigationItem(
+                            title = stringResource(R.string.progress_import_title),
+                            summary = stringResource(R.string.progress_import_summary),
+                            iconRes = R.drawable.ic_download,
+                            onClick = onImportWatchProgress,
+                        )
                     }
                 }
                 item {
@@ -675,6 +689,8 @@ private fun HomeSettingsScreenPreview() {
             onClearCache = {},
             onExportBackup = {},
             onImportBackup = {},
+            onExportWatchProgress = {},
+            onImportWatchProgress = {},
             onExportLocalLists = {},
             onImportLocalLists = {},
             onExportOnlineLists = {},
