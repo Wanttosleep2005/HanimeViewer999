@@ -41,7 +41,12 @@ class CdnRelayInterceptor : Interceptor {
         // 用户可在「网络设置 → CDN 中转」关掉。每次请求都读一次，改设置立即生效。
         if (!CdnRelay.enabled) return chain.proceed(request)
 
-        if (CdnRelay.isKnownDead(host)) return relay(chain, request, null)
+        if (CdnRelay.isKnownDead(host)) {
+            // 已验证过直连必死。中转若也被探活判死，就别再绕这一趟了 ——
+            // 直接把**直连的原始错误**抛出去：报错指向真实原因，还省掉一次白等的超时。
+            if (CdnRelay.cachedReachable == false) return chain.proceed(request)
+            return relay(chain, request, null)
+        }
 
         val direct = runCatching { chain.proceed(request) }
         direct.getOrNull()?.let { if (it.isSuccessful) return it }
@@ -69,7 +74,11 @@ class CdnRelayInterceptor : Interceptor {
         return try {
             chain.proceed(request.newBuilder().url(forwarded).build())
         } catch (e: IOException) {
-            // 中转也失败：抛直连的错更能说明问题（中转失败通常是次生现象）。
+            // 中转自己也可能失败。这里**只安排一次后台复探，不立刻把中转判死** ——
+            // 一次网络抖动就把中转停用 5 分钟，代价（视频看不了）远大于收益。
+            // 真死了的话复探会记下来，下一个请求就不再白绕。
+            CdnRelay.scheduleReprobe()
+            // 抛直连的错更能说明问题（中转失败通常是次生现象）。
             cause?.let { throw it }
             throw e
         }

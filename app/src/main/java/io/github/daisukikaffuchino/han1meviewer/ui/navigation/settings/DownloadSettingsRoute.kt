@@ -31,6 +31,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.documentfile.provider.DocumentFile
 import io.github.daisukikaffuchino.han1meviewer.logic.SettingsRepository
 import io.github.daisukikaffuchino.han1meviewer.R
+import io.github.daisukikaffuchino.han1meviewer.logic.model.MAX_DOWNLOAD_SEGMENTS
 import io.github.daisukikaffuchino.han1meviewer.logic.dao.DownloadDatabase
 import io.github.daisukikaffuchino.han1meviewer.logic.network.interceptor.SpeedLimitInterceptor
 import io.github.daisukikaffuchino.han1meviewer.ui.component.ConfirmDialog
@@ -74,6 +75,7 @@ fun DownloadSettingsRouteScreen(embedded: Boolean = false) {
         state = uiState,
         maxDownloadCountLimit = 10,
         maxDownloadSpeedLimitIndex = SpeedLimitInterceptor.SPEED_BYTES.lastIndex,
+        maxDownloadSegments = MAX_DOWNLOAD_SEGMENTS,
         onOpenDownloadPath = { showDownloadPathDialog = true },
         onRestoreDefaultPath = { },
         onImportDownloadedFiles = {
@@ -94,6 +96,9 @@ fun DownloadSettingsRouteScreen(embedded: Boolean = false) {
         },
         onDownloadSpeedLimitChange = { value ->
             coroutineScope.launch { SettingsRepository.setDownloadSpeedLimitIndex(value) }
+        },
+        onDownloadSegmentsChange = { value ->
+            coroutineScope.launch { SettingsRepository.setDownloadSegments(value) }
         },
         embedded = embedded,
     )
@@ -267,6 +272,11 @@ private fun buildDownloadSettingsUiState(context: Context): DownloadSettingsUiSt
                 downloadSpeedLimitSummary = SpeedLimitInterceptor.SPEED_BYTES[
                     SettingsRepository.current.downloadSpeedLimitIndex
                 ].toDownloadSpeedPrettyString(context),
+                downloadSegments = SettingsRepository.downloadSegments,
+                downloadSegmentsSummary = toDownloadSegmentsPrettyString(
+                    context,
+                    SettingsRepository.downloadSegments
+                ),
             )
         )?.name ?: uri.toString()
     }
@@ -281,5 +291,10 @@ private fun buildDownloadSettingsUiState(context: Context): DownloadSettingsUiSt
         downloadSpeedLimitIndex = speedIndex,
         downloadSpeedLimitSummary = SpeedLimitInterceptor.SPEED_BYTES[speedIndex]
             .toDownloadSpeedPrettyString(context),
+        downloadSegments = SettingsRepository.downloadSegments,
+        downloadSegmentsSummary = toDownloadSegmentsPrettyString(
+            context,
+            SettingsRepository.downloadSegments
+        ),
     )
 }

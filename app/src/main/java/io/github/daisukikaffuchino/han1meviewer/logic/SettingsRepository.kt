@@ -14,6 +14,7 @@ import io.github.daisukikaffuchino.han1meviewer.logic.model.ThemeAccent
 import io.github.daisukikaffuchino.han1meviewer.logic.model.ThemeMode
 import io.github.daisukikaffuchino.han1meviewer.logic.model.VideoLandscapeLayoutStyle
 import io.github.daisukikaffuchino.han1meviewer.logic.model.DOWNLOAD_SPEED_BYTES
+import io.github.daisukikaffuchino.han1meviewer.logic.model.MAX_DOWNLOAD_SEGMENTS
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -99,6 +100,8 @@ object SettingsRepository : SettingsStore {
     val proxyUsername get() = current.proxyUsername
     val proxyPassword get() = current.proxyPassword
     val downloadCountLimit get() = current.downloadCountLimit
+    /** 单个文件下载的连接数（分片并行）。见 [AppSettings.downloadSegments]。 */
+    val downloadSegments get() = current.downloadSegments
     val collapseDownloadedGroup get() = current.collapseDownloadedGroup
     val isUsePrivateStorage get() = current.usePrivateStorage
     val safDownloadPath get() = current.safDownloadPath
@@ -161,6 +164,8 @@ object SettingsRepository : SettingsStore {
     suspend fun setUsePrivateStorage(value: Boolean) = update { it.copy(usePrivateStorage = value) }
     suspend fun setDownloadStorage(usePrivate: Boolean, path: String?) = update { it.copy(usePrivateStorage = usePrivate, safDownloadPath = path) }
     suspend fun setDownloadCountLimit(value: Int) = update { it.copy(downloadCountLimit = value) }
+    suspend fun setDownloadSegments(value: Int) =
+        update { it.copy(downloadSegments = value.coerceIn(1, MAX_DOWNLOAD_SEGMENTS)) }
     suspend fun setDownloadSpeedLimitIndex(value: Int) = update { it.copy(downloadSpeedLimitIndex = value.coerceIn(DOWNLOAD_SPEED_BYTES.indices)) }
     suspend fun setSlideSensitivity(value: Int) = update { it.copy(slideSensitivity = value.coerceIn(1, 7)) }
     suspend fun setSubscriptionArtistRows(value: Int) = update { it.copy(subscriptionArtistRows = value.coerceIn(1, 3)) }

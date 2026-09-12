@@ -20,6 +20,9 @@ data class DownloadSettingsUiState(
     val downloadCountLimitSummary: String,
     val downloadSpeedLimitIndex: Int,
     val downloadSpeedLimitSummary: String,
+    /** 单文件下载的连接数（分片并行）。1 = 关掉并行，退回老的单连接行为。 */
+    val downloadSegments: Int,
+    val downloadSegmentsSummary: String,
 )
 
 @Composable
@@ -27,11 +30,13 @@ fun DownloadSettingsScreen(
     state: DownloadSettingsUiState,
     maxDownloadCountLimit: Int,
     maxDownloadSpeedLimitIndex: Int,
+    maxDownloadSegments: Int,
     onOpenDownloadPath: () -> Unit,
     onRestoreDefaultPath: () -> Unit,
     onImportDownloadedFiles: () -> Unit,
     onDownloadCountLimitChange: (Int) -> Unit,
     onDownloadSpeedLimitChange: (Int) -> Unit,
+    onDownloadSegmentsChange: (Int) -> Unit,
     embedded: Boolean = false,
 ) {
     val content: @Composable () -> Unit = {
@@ -68,6 +73,14 @@ fun DownloadSettingsScreen(
                     iconRes = R.drawable.ic_speed,
                     onValueChange = onDownloadSpeedLimitChange,
                 )
+                SettingSliderItem(
+                    title = stringResource(R.string.download_segments),
+                    summary = state.downloadSegmentsSummary,
+                    value = state.downloadSegments,
+                    valueRange = 1..maxDownloadSegments,
+                    iconRes = R.drawable.ic_speed,
+                    onValueChange = onDownloadSegmentsChange,
+                )
             }
         }
     }
@@ -94,14 +107,18 @@ private fun DownloadSettingsScreenPreview() {
                 downloadCountLimitSummary = "2",
                 downloadSpeedLimitIndex = 0,
                 downloadSpeedLimitSummary = "无限制",
+                downloadSegments = 4,
+                downloadSegmentsSummary = "4",
             ),
             maxDownloadCountLimit = 10,
             maxDownloadSpeedLimitIndex = 5,
+            maxDownloadSegments = 8,
             onOpenDownloadPath = {},
             onRestoreDefaultPath = {},
             onImportDownloadedFiles = {},
             onDownloadCountLimitChange = {},
             onDownloadSpeedLimitChange = {},
+            onDownloadSegmentsChange = {},
         )
     }
 }

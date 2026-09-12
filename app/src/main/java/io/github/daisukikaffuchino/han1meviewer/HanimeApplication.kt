@@ -13,6 +13,7 @@ import coil3.SingletonImageLoader
 import coil3.network.okhttp.OkHttpNetworkFetcherFactory
 import io.github.daisukikaffuchino.han1meviewer.logic.SettingsRepository
 import io.github.daisukikaffuchino.han1meviewer.logic.datastore.DataStoreManager
+import io.github.daisukikaffuchino.han1meviewer.logic.network.CdnRelay
 import io.github.daisukikaffuchino.han1meviewer.logic.network.HProxyAuthenticator
 import io.github.daisukikaffuchino.han1meviewer.logic.network.HProxySelector
 import io.github.daisukikaffuchino.han1meviewer.logic.network.ImageNetworkClient
@@ -59,6 +60,10 @@ class HanimeApplication : Application(), Application.ActivityLifecycleCallbacks,
         // SOCKS5 的用户名/密码认证只能通过全局 java.net.Authenticator 提供
         // （那段协商发生在 Socket 建连内部，OkHttp 看不到），必须在任何建连之前装好。
         HProxyAuthenticator.installSocksAuthenticator()
+
+        // 【8.1】预热一次中转探活：这样第一个视频请求失败后，能立刻知道「该不该绕中转」，
+        // 不必先等一次探活超时。不阻塞启动，失败也无所谓。
+        CdnRelay.warmUp()
 
         if (AnimeShaders.copyShaderAssets(applicationContext) <= 0) {
             LogUtil.w(TAG, "Shader 复制失败")

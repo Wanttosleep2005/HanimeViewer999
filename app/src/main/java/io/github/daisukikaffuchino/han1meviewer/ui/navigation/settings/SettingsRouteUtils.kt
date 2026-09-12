@@ -77,6 +77,14 @@ internal fun toDownloadCountLimitPrettyString(context: Context, value: Int): Str
     return if (value == 0) context.getString(R.string.no_limit) else value.toString()
 }
 
+/**
+ * 分片连接数的展示文案。`1` 不是「1 条连接」，而是**关掉并行**（退回老的单连接行为），
+ * 所以这里说清楚，避免用户以为「1」也是个可选的加速档位。
+ */
+internal fun toDownloadSegmentsPrettyString(context: Context, value: Int): String {
+    return if (value <= 1) context.getString(R.string.download_segments_off) else value.toString()
+}
+
 internal fun isDeviceSecureCompat(context: Context): Boolean {
     val km = context.getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager
     return km.isDeviceSecure

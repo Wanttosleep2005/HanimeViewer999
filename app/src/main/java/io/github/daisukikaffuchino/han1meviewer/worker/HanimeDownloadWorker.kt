@@ -27,6 +27,8 @@ import io.github.daisukikaffuchino.han1meviewer.HFileManager
 import io.github.daisukikaffuchino.han1meviewer.HFileManager.createVideoName
 import io.github.daisukikaffuchino.han1meviewer.R
 import io.github.daisukikaffuchino.han1meviewer.logic.DatabaseRepo
+import io.github.daisukikaffuchino.han1meviewer.logic.SettingsRepository
+import io.github.daisukikaffuchino.han1meviewer.logic.model.MAX_DOWNLOAD_SEGMENTS
 import io.github.daisukikaffuchino.han1meviewer.logic.entity.download.DownloadGroupEntity
 import io.github.daisukikaffuchino.han1meviewer.logic.entity.download.HanimeDownloadEntity
 import io.github.daisukikaffuchino.han1meviewer.logic.hls.HlsPlaylist
@@ -71,6 +73,7 @@ import java.net.UnknownHostException
 import java.net.SocketException
 import java.util.concurrent.CancellationException
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicLong
 import kotlin.random.Random
 
 /**
@@ -116,6 +119,15 @@ class HanimeDownloadWorker(
 
         private const val MAX_STREAM_RETRY_COUNT = 3
         private const val MAX_WORK_RETRY_COUNT = 3
+
+        /**
+         * 小于这个大小就不值得开多连接 —— 多出来的握手与额外请求开销会盖过收益，
+         * 而「探测是否支持 Range」本身还要多发一个请求。
+         */
+        private const val SEGMENT_MIN_BYTES = 8 * 1024 * 1024L
+
+        /** 分片下载的读缓冲。比单连接那份（8 KB）大得多：并行时每条流都要少一些系统调用。 */
+        private const val SEGMENT_BUFFER_SIZE = 64 * 1024
 
         /** HLS：估算总大小时抽样多少个分片（分片大小近乎等长，抽样足够准）。 */
         private const val HLS_SAMPLE_COUNT = 12
@@ -516,7 +528,33 @@ class HanimeDownloadWorker(
                 var delayTime = 0L
                 var retryCount = 0
 
-                while (downloadedLength < entity.length) {
+                // 【8.1】分片并行：直链 + 私有目录 + 全新下载 + 服务端确实支持 Range 时，
+                // 用多条连接同时拉同一个文件的不同区间。
+                //
+                // 为什么这是唯一有效的提速手段（2026-09-12 实测）：这台中转服务器到
+                // 国内的**单条 TCP 只有 ~350 KB/s**，而**多连接并行能到 ~1050 KB/s** ——
+                // 是国际链路**按流限速**，总带宽其实是够的。所以「换服务器」不解决问题，
+                // 开多流才是解。
+                //
+                // 单连接的老路径**一行没动**，只是被下面那个 `segmentCount <= 1` 旁路掉，
+                // 所以任何一项前置条件不满足时，行为与本版之前完全一致。
+                val segmentCount = resolveSegmentCount(
+                    total = entity.length,
+                    canSegment = raf != null && downloadedLength == 0L,
+                )
+                if (segmentCount > 1) {
+                    LogUtil.i(TAG, "并行下载：$segmentCount 条连接 / ${entity.length} 字节")
+                    // 交给并行路径自己按偏移写，这里先把外层开的句柄放掉。
+                    raf?.closeQuietly()
+                    raf = null
+                    downloadedLength = downloadParallel(
+                        file = file,
+                        total = entity.length,
+                        segments = segmentCount,
+                    ) { done -> reportProgress(entity, done) }
+                }
+
+                while (downloadedLength < entity.length && segmentCount <= 1) {
                     val requestNeedRange = downloadedLength > 0
                     val requestBuilder = Request.Builder().url(downloadUrl).get()
                     if (requestNeedRange) requestBuilder.header("Range", "bytes=$downloadedLength-")
@@ -555,20 +593,7 @@ class HanimeDownloadWorker(
                             downloadedLength += len
 
                             if (System.currentTimeMillis() - delayTime > RESPONSE_INTERVAL) {
-                                // 非 HLS 走到这里时 entity.length 必然 > 0（上面已拦过），
-                                // 但除零的代价是崩界面，这里再兜一层。
-                                val progress = if (entity.length > 0L) {
-                                    (downloadedLength * 100 / entity.length).coerceAtMost(100)
-                                } else {
-                                    0L
-                                }
-                                setProgress(workDataOf(PROGRESS to progress.toInt()))
-                                updateDownloadNotification(progress.toInt())
-                                DatabaseRepo.HanimeDownload.update(
-                                    entity.copy(downloadedLength = downloadedLength,
-                                        state = DownloadState.Downloading
-                                    )
-                                )
+                                reportProgress(entity, downloadedLength)
                                 delayTime = System.currentTimeMillis()
                             }
                             len = bodyStream.read(buffer)
@@ -645,6 +670,170 @@ class HanimeDownloadWorker(
             return@withContext result
         }
     }
+
+    //<editor-fold desc="分片并行下载（8.1）">
+
+    /**
+     * 进度上报。单连接与分片并行**共用同一套**，避免两条路径的进度 / 通知 / 落库语义漂移。
+     *
+     * 非 HLS 走到这里时 `entity.length` 必然 > 0（上层已拦过），但除零的代价是崩界面，
+     * 这里再兜一层。
+     */
+    private suspend fun reportProgress(entity: HanimeDownloadEntity, downloadedLength: Long) {
+        val progress = if (entity.length > 0L) {
+            (downloadedLength * 100 / entity.length).coerceAtMost(100)
+        } else {
+            0L
+        }
+        setProgress(workDataOf(PROGRESS to progress.toInt()))
+        updateDownloadNotification(progress.toInt())
+        DatabaseRepo.HanimeDownload.update(
+            entity.copy(
+                downloadedLength = downloadedLength,
+                state = DownloadState.Downloading
+            )
+        )
+    }
+
+    /**
+     * 决定这次开几条连接。
+     *
+     * 三个否决条件，任何一个不满足都退回单连接：
+     * 1. **只对私有目录开放**（`raf != null`）—— SAF 那条路是往一个 `FileChannel` 顺序追加，
+     *    没有随机写语义，硬做并行会写坏文件；
+     * 2. **只对全新下载开放**（`downloadedLength == 0`）—— 断点续传是「接着上次的尾巴写」，
+     *    此时分片边界无从得知，混在一起会漏字节；
+     * 3. **服务端必须真的支持 Range**（见 [supportsRange]）。
+     */
+    private suspend fun resolveSegmentCount(total: Long, canSegment: Boolean): Int {
+        val configured = runCatching { SettingsRepository.downloadSegments }.getOrDefault(1)
+        if (!canSegment || configured <= 1) return 1
+        if (total < SEGMENT_MIN_BYTES) return 1
+        if (!supportsRange()) {
+            LogUtil.w(TAG, "服务端不接受 Range 请求，退回单连接下载")
+            return 1
+        }
+        return configured.coerceIn(1, MAX_DOWNLOAD_SEGMENTS)
+    }
+
+    /**
+     * 服务端是否**真的**支持按区间取。
+     *
+     * 这一步不能省：有些镜像会把 `Range` 当成普通 GET 忽略掉（回 200 + 整个文件）。
+     * 那样 4 条连接会各自把整个文件写一遍，最后得到一份**被交叉覆盖的坏文件** ——
+     * 而它的「文件长度」完全正常，只有播放或安装时才会炸，是最难查的那类问题。
+     */
+    private suspend fun supportsRange(): Boolean {
+        val request = Request.Builder().url(downloadUrl)
+            .header("Range", "bytes=0-0")
+            .apply { downloadHeaders.forEach { (name, value) -> header(name, value) } }
+            .get()
+            .build()
+        return try {
+            ServiceCreator.downloadClient.newCall(request).await().use { response ->
+                response.code == 206 && response.header("Content-Range") != null
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    /**
+     * 把 [total] 字节切成 [segments] 段并行下载，返回实际写入的字节数。
+     *
+     * 每段各自开一个 `RandomAccessFile` 写自己的偏移，所以彼此不覆盖。
+     * 进度按「已写入总量」上报，且**限流到 [RESPONSE_INTERVAL]** —— 4 条流各按 64 KB
+     * 回调一次的话，不限流会把数据库和通知栏打爆。
+     */
+    private suspend fun downloadParallel(
+        file: File,
+        total: Long,
+        segments: Int,
+        onProgress: suspend (Long) -> Unit,
+    ): Long {
+        val done = AtomicLong(0L)
+        val lastReport = AtomicLong(System.currentTimeMillis())
+        RandomAccessFile(file, "rwd").use { it.setLength(total) }
+
+        val per = (total + segments - 1) / segments
+        coroutineScope {
+            (0 until segments).mapNotNull { index ->
+                val start = index * per
+                if (start >= total) return@mapNotNull null
+                val end = minOf(start + per - 1, total - 1)
+                async(Dispatchers.IO) {
+                    downloadSegment(file, start, end) { chunk ->
+                        val nowDone = done.addAndGet(chunk)
+                        val now = System.currentTimeMillis()
+                        if (now - lastReport.get() >= RESPONSE_INTERVAL &&
+                            lastReport.compareAndSet(lastReport.get(), now)
+                        ) {
+                            onProgress(nowDone)
+                        }
+                    }
+                }
+            }.awaitAll()
+        }
+        return done.get()
+    }
+
+    /**
+     * 下载闭区间 `[start, end]`，返回写入字节数。
+     *
+     * **段内自带重试**：流被掐断（[isStreamResetCancel]）时重发一次 Range 请求，从
+     * 「这一段里已经落盘的偏移」继续，而不是整段重来 —— 国际链路抖一下很常见，
+     * 让整段重来会把「开多连接」的收益整个吃掉。
+     */
+    private suspend fun downloadSegment(
+        file: File,
+        start: Long,
+        end: Long,
+        onProgress: suspend (Long) -> Unit,
+    ): Long {
+        val expected = end - start + 1
+        var written = 0L
+        var retryCount = 0
+        RandomAccessFile(file, "rwd").use { raf ->
+            raf.seek(start)
+            while (written < expected) {
+                currentCoroutineContext().ensureActive()
+                val from = start + written
+                val request = Request.Builder().url(downloadUrl)
+                    .header("Range", "bytes=$from-$end")
+                    .apply { downloadHeaders.forEach { (name, value) -> header(name, value) } }
+                    .get()
+                    .build()
+                val response = ServiceCreator.downloadClient.newCall(request).await()
+                try {
+                    if (response.code != 206) {
+                        // 前置条件已用 [supportsRange] 验过，走到这里只可能是服务端中途变卦。
+                        // 直接抛：外层按普通下载失败处理（记录还在，用户可重试）。
+                        throw IOException("Range 请求返回 HTTP ${response.code}（期望 206）")
+                    }
+                    response.body.byteStream().use { stream ->
+                        val buffer = ByteArray(SEGMENT_BUFFER_SIZE)
+                        var len = stream.read(buffer)
+                        while (len != -1) {
+                            raf.write(buffer, 0, len)
+                            written += len
+                            onProgress(len.toLong())
+                            len = stream.read(buffer)
+                        }
+                    }
+                } catch (e: IOException) {
+                    if (!e.isStreamResetCancel() || retryCount >= MAX_STREAM_RETRY_COUNT) throw e
+                    retryCount++
+                } finally {
+                    response.closeQuietly()
+                }
+            }
+        }
+        return written
+    }
+
+    //</editor-fold>
 
     //<editor-fold desc="HLS 下载（nJAV 等只能给清单的站点）">
 

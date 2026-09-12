@@ -1,5 +1,8 @@
 package io.github.daisukikaffuchino.han1meviewer.logic.model
 
+/** 分片下载允许的最大连接数（与设置页滑杆上限一致）。 */
+const val MAX_DOWNLOAD_SEGMENTS = 8
+
 val DOWNLOAD_SPEED_BYTES = longArrayOf(
     0L,
     128 * 1024L,
@@ -211,6 +214,21 @@ data class AppSettings(
     val ignoredVersionCode: Int = -1,
     val downloadCountLimit: Int = 2,
     val downloadSpeedLimitIndex: Int = 0,
+    /**
+     * 单个文件下载时开几条连接（分片并行）。
+     *
+     * 为什么要这个：实测（2026-09-12）这台中转服务器到国内**单条 TCP 只有 ~350 KB/s**，
+     * 而**多连接并行能到 ~1050 KB/s** —— 是国际链路**按流限速**（每条流各自被卡），
+     * 总带宽其实是够的。所以「换服务器」不解决问题，**开多流才是解**。
+     *
+     * 4 是保守值：足够拿到 3 倍收益，又不会把中转打得太满（服务器是 4H4G，
+     * 中转用线程池，每个分片占一条上游连接）。
+     *
+     * 只在**直链 + 私有目录 + 全新下载 + 服务端确认支持 Range** 时生效；
+     * HLS（只能逐片顺序拼）、SAF 目录、断点续传一律退回单连接 ——
+     * 见 `HanimeDownloadWorker.downloadParallel`。
+     */
+    val downloadSegments: Int = 4,
     val usePrivateStorage: Boolean = true,
     val safDownloadPath: String? = null,
     val collapseDownloadedGroup: Boolean = false,

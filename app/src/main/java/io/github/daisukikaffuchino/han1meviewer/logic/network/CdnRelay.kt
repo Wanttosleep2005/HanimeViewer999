@@ -6,11 +6,20 @@ import io.github.daisukikaffuchino.han1meviewer.logic.SettingsRepository
 import io.github.daisukikaffuchino.utils.LogUtil
 import io.github.daisukikaffuchino.utils.applicationContext
 import io.github.daisukikaffuchino.utils.unsafeLazy
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
+import okhttp3.OkHttpClient
+import okhttp3.Request
 import java.security.KeyStore
 import java.security.cert.CertificateFactory
 import java.security.cert.X509Certificate
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 import javax.net.ssl.SSLContext
 import javax.net.ssl.TrustManagerFactory
 import javax.net.ssl.X509TrustManager
@@ -215,4 +224,109 @@ object CdnRelay {
 
         override fun getAcceptedIssuers(): Array<X509Certificate> = accepted
     }
+
+    //<editor-fold desc="中转可达性探活（8.1）">
+
+    /**
+     * 「直连失败 → 走中转」这条路上有一个不明显的浪费：
+     *
+     * 如果**中转自己**就不可达（服务器挂了、IP 被临时封、当前网络根本出不去），
+     * 那么每一次直连失败之后**还要再等一次中转超时**，才把错误抛给上层。
+     * 播放一个视频会发几十上百个请求，这种「双倍等待」在用户眼里就是卡死。
+     *
+     * 所以这里做一次**轻量探活**（`GET /ping`）并把结论缓存 [PROBE_TTL_MS]：
+     *
+     * | [cachedReachable] | 行为 |
+     * |---|---|
+     * | `true` | 直连失败 → 正常走中转（与 8.0 一致） |
+     * | `false` | 直连失败 → **不再绕中转**，直接抛出真实的直连错误 |
+     * | `null`（还没探过 / 缓存过期） | 按未知处理，行为与 8.0 完全一致 |
+     *
+     * ⚠️ 刻意用 `/ping` 而不是拿真实视频地址探：探活只需要证明「服务器活着、证书对得上」，
+     * 不该为了一次探活去 CDN 上取字节（白耗流量，还可能被 CDN 侧当成异常请求）。
+     */
+    @Volatile
+    private var probeResult: Boolean? = null
+
+    @Volatile
+    private var probeAt = 0L
+
+    /** 缓存有效期。太短等于隔几分钟白探一次；太长则服务器恢复后要等很久才恢复。 */
+    private const val PROBE_TTL_MS = 5 * 60_000L
+
+    /** 探活超时。中转要么秒回要么就是不通，5 s 足够。 */
+    private const val PROBE_TIMEOUT_MS = 5_000L
+
+    /** 失败复探的最小间隔，防止一堆请求同时失败时把探活打成风暴。 */
+    private const val REPROBE_MIN_INTERVAL_MS = 30_000L
+
+    private val probeScope by unsafeLazy { CoroutineScope(SupervisorJob() + Dispatchers.IO) }
+    private val probeInFlight = AtomicBoolean(false)
+
+    /**
+     * 探活专用 client：**只有它自己用**，所以超时可以给得很短，
+     * 不像播放链路那个 client 为了长视频必须把 `callTimeout` 设成 0。
+     *
+     * 没有显式设 `proxySelector` —— OkHttp 默认走 `ProxySelector.getDefault()`，
+     * 而 [io.github.daisukikaffuchino.han1meviewer.HanimeApplication] 已经在启动时把它
+     * 换成了 [HProxySelector]，所以这里自动继承了用户配置的代理（线路本来就正常的用户不必额外绕）。
+     */
+    private val probeClient by unsafeLazy {
+        OkHttpClient.Builder()
+            .connectTimeout(PROBE_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+            .readTimeout(PROBE_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+            .callTimeout(PROBE_TIMEOUT_MS + 2_000L, TimeUnit.MILLISECONDS)
+            .sslSocketFactory(sslContext.socketFactory, trustManager)
+            .build()
+    }
+
+    /** 当前**已知**的可达性结论；`null` = 还没探过，或缓存已过期。 */
+    val cachedReachable: Boolean?
+        get() = probeResult?.takeIf { System.currentTimeMillis() - probeAt < PROBE_TTL_MS }
+
+    /** 真正打一次 `/ping`。失败不抛，只会得到 `false`。 */
+    suspend fun probe(force: Boolean = false): Boolean {
+        if (!force) cachedReachable?.let { return it }
+        val ok = withContext(Dispatchers.IO) {
+            runCatching {
+                val request =
+                    Request.Builder().url("https://$HOST:$PORT/ping").get().build()
+                probeClient.newCall(request).execute().use { it.isSuccessful }
+            }.getOrDefault(false)
+        }
+        probeResult = ok
+        probeAt = System.currentTimeMillis()
+        LogUtil.i(TAG, "中转探活结果：${if (ok) "可达" else "不可达"}")
+        return ok
+    }
+
+    /**
+     * 启动时预热一次，让第一个视频请求不必先等一次探活超时。
+     * 失败无所谓 —— 探活只影响「失败后要不要多绕一趟」，不影响主流程。
+     */
+    fun warmUp() {
+        probeScope.launch { runCatching { probe(force = true) } }
+    }
+
+    /**
+     * 中转请求刚失败时调用：**后台复探一次**，但**不立刻判死**。
+     *
+     * 为什么不直接 `probeResult = false`：那样的后果是「一次网络抖动 → 中转被停用 5 分钟 →
+     * 视频彻底看不了」，代价远大于收益。真死了的话，这次复探会把它记成 false，
+     * 下一个请求就再也不会白绕了 —— 只慢一个请求。
+     */
+    fun scheduleReprobe() {
+        val now = System.currentTimeMillis()
+        if (now - probeAt < REPROBE_MIN_INTERVAL_MS) return
+        if (!probeInFlight.compareAndSet(false, true)) return
+        probeScope.launch {
+            try {
+                probe(force = true)
+            } finally {
+                probeInFlight.set(false)
+            }
+        }
+    }
+
+    //</editor-fold>
 }
