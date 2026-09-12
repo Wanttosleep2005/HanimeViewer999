@@ -3,6 +3,7 @@ package io.github.daisukikaffuchino.han1meviewer.logic.network
 import android.content.Context
 import io.github.daisukikaffuchino.han1meviewer.R
 import io.github.daisukikaffuchino.han1meviewer.logic.SettingsRepository
+import io.github.daisukikaffuchino.utils.LogUtil
 import io.github.daisukikaffuchino.utils.applicationContext
 import io.github.daisukikaffuchino.utils.unsafeLazy
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
@@ -61,6 +62,8 @@ import javax.net.ssl.X509TrustManager
  * [CdnRelayInterceptor] 装在更外层，正常情况下 `wsrv.nl` 那层根本不会被触发。
  */
 object CdnRelay {
+
+    private const val TAG = "CdnRelay"
 
     /**
      * 中转端点。写死在 APK 里（用户自建，不打算公开分发），
@@ -151,22 +154,35 @@ object CdnRelay {
     private fun buildTrustManager(context: Context): X509TrustManager {
         val system = defaultTrustManager()
         val relay = runCatching {
-            context.resources.openRawResource(R.raw.relay_cert).use { stream ->
-                val certificate = CertificateFactory.getInstance("X.509")
-                    .generateCertificate(stream) as X509Certificate
-                val keyStore = KeyStore.getInstance(KeyStore.getDefaultType()).apply {
-                    load(null)
-                    setCertificateEntry("cdnRelay", certificate)
-                }
-                TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm())
-                    .apply { init(keyStore) }
-                    .trustManagers
-                    .filterIsInstance<X509TrustManager>()
-                    .firstOrNull()
+            // ⚠️ 先把 CR 去掉再解析。这个文件在 Windows 工作区里是 CRLF（git 的
+            // core.autocrlf 会把入库的 LF 换成 CRLF），而 aapt2 是**原样**把
+            // res/raw 拷进 APK 的 —— 于是运行期拿到的是带 `\r` 的 PEM。
+            // 主流 JDK 的 PEM 解析能容忍，但这是一次性、不可观测的初始化，
+            // 一旦在某些 ROM 的 JDK 实现上不容忍，表现会是「一开中转就崩」，
+            // 排查成本远高于这里去掉两个字节。
+            val pem = context.resources.openRawResource(R.raw.relay_cert)
+                .use { it.readBytes() }
+                .toString(Charsets.UTF_8)
+                .replace("\r", "")
+            val certificate = CertificateFactory.getInstance("X.509")
+                .generateCertificate(pem.byteInputStream()) as X509Certificate
+            val keyStore = KeyStore.getInstance(KeyStore.getDefaultType()).apply {
+                load(null)
+                setCertificateEntry("cdnRelay", certificate)
             }
+            TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm())
+                .apply { init(keyStore) }
+                .trustManagers
+                .filterIsInstance<X509TrustManager>()
+                .firstOrNull()
         }.getOrNull()
 
-        if (relay == null) return system
+        if (relay == null) {
+            // 内置证书读不出来（资源被裁、编码被改）时降级成「只用系统 CA」：
+            // 中转请求会因证书校验失败而报错，但 App 不会崩，报错也会明确指向中转。
+            LogUtil.e(TAG, "内置中转证书加载失败，本次运行将无法使用 CDN 中转")
+            return system
+        }
         return CompositeTrustManager(system, relay)
     }
 
